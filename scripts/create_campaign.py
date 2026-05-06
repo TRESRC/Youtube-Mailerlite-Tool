@@ -332,7 +332,7 @@ def create_campaign(html: str) -> str:
 
     SOURCE_CAMPAIGN_ID = "186558527880300307"
 
-    # Step 1 — Copy the last sent campaign to drafts
+    # Step 1 — Copy the last sent campaign
     log(f"Copying campaign {SOURCE_CAMPAIGN_ID}...")
     r = requests.post(
         f"https://connect.mailerlite.com/api/campaigns/{SOURCE_CAMPAIGN_ID}/copy",
@@ -343,106 +343,87 @@ def create_campaign(html: str) -> str:
         raise RuntimeError(f"Copy failed: {r.status_code} {r.text}")
 
     data = r.json()["data"]
-    campaign_id = data["id"]
-    email_id    = data["emails"][0]["id"]
-    old_content = data["emails"][0].get("content", "")
-    old_subject = data["emails"][0].get("subject", "")
-    log(f"Copied — campaign: {campaign_id} email: {email_id}")
-    log(f"Old subject: {old_subject}")
-    log(f"Old content length: {len(old_content)}")
+    campaign_id  = data["id"]
+    old_content  = data["emails"][0].get("content", "")
+    old_subject  = data["emails"][0].get("subject", "")
+    resend_cfg   = data.get("resend_settings", {})
+    log(f"Copied — campaign: {campaign_id}")
+    log(f"Resend settings from copy: {json.dumps(resend_cfg)}")
 
-    # Step 2 — Find and replace dynamic content in the copied HTML
-    # The copied content is the real builder HTML — we swap the variable parts
+    # Step 2 — Find and replace dynamic content
+    import re
     new_content = old_content
-
-    # Replace title (appears as linked text in the email)
     new_content = new_content.replace(old_subject, SUBJECT)
 
-    # Replace thumbnail image URL
-    if IMAGE_URL and old_content:
-        import re
-        # Find existing image URLs that look like stored ML CDN or WordPress uploads
-        img_pattern = r'(https://storage\.mlcdn\.com/account_image/318100/[^"\']+\.(?:png|jpg|jpeg|gif)|https://theresource\.tv/wp-content/uploads/[^"\']+\.(?:png|jpg|jpeg|gif))'
-        existing_imgs = re.findall(img_pattern, old_content)
-        # The thumbnail is typically the largest image — find the one that's not the logo or partner image
-        logo_url = "S7zmBlAJIt7XKgyLUqSgmNMmnla5iQRvcn2nHClK"
-        partner_url = "BrGoqFUD9UYLkqhmhltu3YEqQdUtDxMunlMGyUlc"
-        thumb_candidates = [u for u in existing_imgs if logo_url not in u and partner_url not in u]
-        if thumb_candidates:
-            old_thumb = thumb_candidates[0]
-            log(f"Replacing thumbnail: {old_thumb[:80]}...")
-            new_content = new_content.replace(old_thumb, IMAGE_URL)
-        else:
-            log("⚠️  Could not find thumbnail URL to replace")
+    if IMAGE_URL:
+        img_pattern = r'https://storage\.mlcdn\.com/account_image/318100/(?!S7zmBlAJIt7XKgyLUqSgmNMmnla5iQRvcn2nHClK|BrGoqFUD9UYLkqhmhltu3YEqQdUtDxMunlMGyUlc)[^"\'<>\s]+'
+        imgs = re.findall(img_pattern, old_content)
+        if imgs:
+            log(f"Replacing thumbnail: {imgs[0][:80]}...")
+            new_content = new_content.replace(imgs[0], IMAGE_URL)
 
-    # Replace YouTube button links
-    if YOUTUBE_URL and old_content:
-        yt_pattern = r'https://(?:youtu\.be|www\.youtube\.com/watch\?v=)[^"\'&]+'
-        old_yt_urls = re.findall(yt_pattern, old_content)
-        for old_url in set(old_yt_urls):
-            log(f"Replacing YouTube URL: {old_url}")
+    if YOUTUBE_URL:
+        for old_url in set(re.findall(r'https://(?:youtu\.be|www\.youtube\.com/watch\?v=)[^"\'&\s]+', old_content)):
             new_content = new_content.replace(old_url, YOUTUBE_URL)
+            log(f"Replaced YouTube: {old_url}")
 
-    # Replace WordPress blog URL
-    if BLOG_URL and old_content:
-        wp_pattern = r'https://theresource\.tv/video/[^"\'&]+'
-        old_wp_urls = re.findall(wp_pattern, old_content)
-        for old_url in set(old_wp_urls):
-            log(f"Replacing blog URL: {old_url}")
+    if BLOG_URL:
+        for old_url in set(re.findall(r'https://theresource\.tv/video/[^"\'&\s]+', old_content)):
             new_content = new_content.replace(old_url, BLOG_URL)
+            log(f"Replaced blog: {old_url}")
 
-    # Replace body text paragraphs (between the title and the buttons)
-    if BODY_COPY and old_content:
-        # Find the bodyText section
-        body_pattern = r'(<td[^>]*id="bodyText-10"[^>]*>)(.*?)(</td>)'
-        body_match = re.search(body_pattern, new_content, re.DOTALL)
+    if BODY_COPY:
+        body_match = re.search(r'(<td[^>]*id="bodyText-10"[^>]*>)(.*?)(</td>)', new_content, re.DOTALL)
         if body_match:
-            new_body_html = ''.join(
-                f'<p style="margin-top: 0px; margin-bottom: 10px; line-height: 150%;">{p}</p>'
-                for p in BODY_COPY.split('\n') if p.strip()
-            )
-            new_content = new_content[:body_match.start(2)] + new_body_html + new_content[body_match.end(2):]
+            new_body = ''.join(f'<p style="margin-top: 0px; margin-bottom: 10px; line-height: 150%;">{p}</p>' for p in BODY_COPY.split('\n') if p.strip())
+            new_content = new_content[:body_match.start(2)] + new_body + new_content[body_match.end(2):]
             log("Replaced body text")
-        else:
-            log("⚠️  Could not find bodyText-10 block to replace")
 
     log(f"New content length: {len(new_content)}")
 
-    # Step 3 — Update name, subject, content, resend_settings
-    # Resend campaigns require emails as array of arrays: [[{email_obj}]]
-    email_a = {
-        "subject":   SUBJECT,
-        "from_name": FROM_NAME,
-        "from":      FROM_EMAIL,
-        "content":   new_content,
-    }
+    # Step 3 — Build email object
+    email_obj = {"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL, "content": new_content}
     if PREHEADER:
-        email_a["preheader_text"] = PREHEADER
+        email_obj["preheader_text"] = PREHEADER
+
+    # Step 4 — Try PUT with exact resend_settings mirrored from copy response
+    # Mirror the exact structure MailerLite returned — no guessing
+    put_body = {
+        "name":            safe_name,
+        "language_id":     data.get("language_id", 4),
+        "type":            "resend",
+        "emails":          [email_obj],
+        "groups":          [MAILERLITE_GROUP_ID],
+        "resend_settings": resend_cfg,
+    }
+    log(f"PUT body (no content): {json.dumps({**put_body, 'emails': [{'subject': email_obj['subject'], 'content': '[TRUNCATED]'}]})}")
 
     update = requests.put(
         f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
         headers=headers,
-        json={
-            "name":        safe_name,
-            "language_id": 4,
-            "type":        "resend",
-            "emails":      [[email_a]],
-            "groups":      [MAILERLITE_GROUP_ID],
-            "resend_settings": {
-                "test_type":         "subject",
-                "select_winner_by":  "c",
-                "b_value":           {"subject": SUBJECT},
-                "resend_delay":      24,
-                "resend_delay_type": "hours",
-            },
-        },
+        json=put_body,
         timeout=30,
     )
-    log(f"Update status: {update.status_code}")
-    if not update.ok:
-        log(f"Update response: {update.text[:500]}")
+    log(f"PUT status: {update.status_code} | response: {update.text[:400]}")
+
+    if update.ok:
+        log("✅ Full content update succeeded!")
     else:
-        log("✅ Content and subject updated successfully")
+        # Step 5 — Fall back: rename only, content manager updates in builder
+        log("⚠️  Content PUT failed — falling back to rename only")
+        rename = requests.put(
+            f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
+            headers=headers,
+            json={"name": safe_name},
+            timeout=30,
+        )
+        log(f"Rename status: {rename.status_code}")
+        log(f"Draft created with template intact. Content manager should update:")
+        log(f"  Title: {SUBJECT}")
+        log(f"  Thumbnail: {IMAGE_URL}")
+        log(f"  Blog URL: {BLOG_URL}")
+        log(f"  YouTube URL: {YOUTUBE_URL}")
+
     log(f"✅ Draft ready — ID: {campaign_id}")
     return campaign_id
 
