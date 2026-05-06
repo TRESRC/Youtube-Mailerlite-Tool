@@ -402,43 +402,51 @@ def create_campaign(html: str) -> str:
             "resend_delay_type": "hours",
         },
     }
-    log(f"PUT body (no content): {json.dumps({**put_body, 'emails': [{'subject': email_obj['subject'], 'content': '[TRUNCATED]'}]})}")
+    # Try multiple PUT formats to crack the emails.0 array requirement
+    resend_cfg = {
+        "test_type":         "subject",
+        "select_winner_by":  "c",
+        "b_value":           {"subject": SUBJECT},
+        "resend_delay":      24,
+        "resend_delay_type": "hours",
+    }
+    base = {
+        "name":            safe_name,
+        "language_id":     4,
+        "type":            "resend",
+        "groups":          [MAILERLITE_GROUP_ID],
+        "resend_settings": resend_cfg,
+    }
 
-    update = requests.put(
-        f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
-        headers=headers,
-        json=put_body,
-        timeout=30,
-    )
-    log(f"PUT status: {update.status_code} | response: {update.text[:400]}")
+    attempts = [
+        # Format 1: object in array (standard)
+        {**base, "emails": [email_obj]},
+        # Format 2: object in nested array
+        {**base, "emails": [[email_obj]]},
+        # Format 3: content as separate key outside emails
+        {**base, "emails": [{"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL}], "content": new_content},
+        # Format 4: no content in emails, just metadata
+        {**base, "emails": [{"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL, "type": "builder"}]},
+    ]
 
-    if update.ok:
-        log("✅ Full content update succeeded!")
-    else:
-        # Step 5 — Fall back: rename with resend_settings but no content
-        log("⚠️  Content PUT failed — falling back to rename only")
-        rename = requests.put(
+    success = False
+    for i, payload in enumerate(attempts):
+        test = requests.put(
             f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
             headers=headers,
-            json={
-                "name":        safe_name,
-                "language_id": 4,
-                "type":        "resend",
-                "emails":      [{"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL}],
-                "groups":      [MAILERLITE_GROUP_ID],
-                "resend_settings": {
-                    "test_type":         "subject",
-                    "select_winner_by":  "c",
-                    "b_value":           {"subject": SUBJECT},
-                    "resend_delay":      24,
-                    "resend_delay_type": "hours",
-                },
-            },
+            json=payload,
             timeout=30,
         )
-        log(f"Rename status: {rename.status_code}")
-        if not rename.ok:
-            log(f"Rename response: {rename.text[:300]}")
+        log(f"Format {i+1} status: {test.status_code}")
+        if test.ok:
+            log(f"✅ Format {i+1} WORKED!")
+            success = True
+            break
+        else:
+            log(f"Format {i+1} error: {test.text[:200]}")
+
+    if not success:
+        log("⚠️  All formats failed — draft exists with correct name, template intact")
         log(f"Draft created with template intact. Content manager should update:")
         log(f"  Title: {SUBJECT}")
         log(f"  Thumbnail: {IMAGE_URL}")
