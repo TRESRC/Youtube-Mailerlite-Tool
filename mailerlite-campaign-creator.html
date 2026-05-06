@@ -1391,10 +1391,12 @@ ${preheaderHtml}
         from_name: fromName,
         from: fromEmail,
         content: html,
+        type: 'html',
         ...(preheader ? { preheader_text: preheader } : {})
       }],
       groups: [groupId]
     };
+    console.log('MailerLite update payload (no content):', JSON.stringify({...updatePayload, emails: [{...updatePayload.emails[0], content: '[TRUNCATED ' + html.length + ' chars]'}]}, null, 2));
     console.log('MailerLite update payload emails[0].content length:', html.length);
 
     const updateRes = await fetch(`https://connect.mailerlite.com/api/campaigns/${campaignId}`, {
