@@ -408,7 +408,7 @@ def create_campaign(html: str) -> str:
 
     log(f"New content length: {len(new_content)}")
 
-    # Step 3 — Update name, subject, resend_settings (no content — avoid the array error)
+    # Step 3 — Update name, subject, resend_settings
     email_update = {
         "subject":   SUBJECT,
         "from_name": FROM_NAME,
@@ -428,7 +428,7 @@ def create_campaign(html: str) -> str:
             "resend_settings": {
                 "test_type":         "subject",
                 "select_winner_by":  "c",
-                "b_value":           [{"subject": SUBJECT}],
+                "b_value":           {"subject": SUBJECT},
                 "resend_delay":      24,
                 "resend_delay_type": "hours",
             },
@@ -441,18 +441,40 @@ def create_campaign(html: str) -> str:
     else:
         log("✅ Name/subject updated")
 
-    # Step 4 — Fetch the campaign to get the correct email IDs for content update
-    log("Fetching campaign to get email structure...")
+    # Step 4 — Fetch campaign to get all email IDs
     fetch = requests.get(
         f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
         headers=headers,
         timeout=30,
     )
-    if fetch.ok:
-        fetch_data = fetch.json()["data"]
-        log(f"Campaign emails structure: {json.dumps([{'id': e['id'], 'type': e.get('type')} for e in fetch_data.get('emails', [])], indent=2)}")
-    else:
-        log(f"Fetch failed: {fetch.status_code}")
+    if not fetch.ok:
+        log(f"⚠️  Could not fetch campaign emails: {fetch.status_code}")
+        log(f"✅ Draft ready (without content update) — ID: {campaign_id}")
+        return campaign_id
+
+    all_email_ids = [e["id"] for e in fetch.json()["data"].get("emails", [])]
+    log(f"Updating content for {len(all_email_ids)} email(s): {all_email_ids}")
+
+    # Step 5 — Update content on each email individually
+    content_payload = {
+        "subject":   SUBJECT,
+        "from_name": FROM_NAME,
+        "from":      FROM_EMAIL,
+        "content":   new_content,
+    }
+    if PREHEADER:
+        content_payload["preheader_text"] = PREHEADER
+
+    for eid in all_email_ids:
+        cr = requests.put(
+            f"https://connect.mailerlite.com/api/campaigns/{campaign_id}/emails/{eid}",
+            headers=headers,
+            json=content_payload,
+            timeout=30,
+        )
+        log(f"  Email {eid} update status: {cr.status_code}")
+        if not cr.ok:
+            log(f"  Email {eid} response: {cr.text[:300]}")
     log(f"✅ Draft ready — ID: {campaign_id}")
     return campaign_id
 
