@@ -1327,6 +1327,7 @@ ${preheaderHtml}
   };
 
   try {
+    console.log('MailerLite payload:', JSON.stringify(payload, null, 2));
     const res = await fetch('https://connect.mailerlite.com/api/campaigns', {
       method: 'POST',
       headers: {
@@ -1337,6 +1338,7 @@ ${preheaderHtml}
       body: JSON.stringify(payload)
     });
     const data = await res.json();
+    console.log('MailerLite response:', JSON.stringify(data, null, 2));
     if (!res.ok) throw new Error(data.message || JSON.stringify(data.errors || data));
 
     const id = data.data?.id || '—';
@@ -1361,6 +1363,7 @@ ${preheaderHtml}
 // ── Clear / reset ─────────────────────────────────────────────────────────────
 function clearContent() {
   ['subject','preheader','image-url','body-copy','youtube-url','blog-url'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('image-url').dataset.processed = '';
   document.getElementById('thumb-preview').innerHTML = '<div class="thumb-ph">Thumbnail will appear here after fetching</div>';
   document.getElementById('fetch-tag').innerHTML = '';
   document.getElementById('subj-c').textContent = '';
@@ -1385,6 +1388,7 @@ function restoreSocialDefaults() {
 function startFresh() {
   ['subject','preheader','image-url','body-copy','youtube-url','blog-url']
     .forEach(id => document.getElementById(id).value = '');
+  document.getElementById('image-url').dataset.processed = '';
   restoreSocialDefaults();
   document.getElementById('thumb-preview').innerHTML = '<div class="thumb-ph">Thumbnail will appear here after fetching</div>';
   document.getElementById('fetch-tag').innerHTML = '';
@@ -1402,6 +1406,10 @@ function startFresh() {
 // ── Init ──────────────────────────────────────────────────────────────────────
 loadConfig();
 restoreSocialDefaults();
+if (playBtnDataUrl) {
+  showStatus('content', 'Play button loaded from last session — ready to apply to thumbnails.', 'success');
+  setTimeout(() => hideStatus('content'), 3000);
+}
 </script>
 </body>
 </html>
