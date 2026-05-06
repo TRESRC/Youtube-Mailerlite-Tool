@@ -409,14 +409,8 @@ def create_campaign(html: str) -> str:
     log(f"New content length: {len(new_content)}")
 
     # Step 3 — Update name, subject, content, resend_settings
-    # Resend campaigns require TWO email objects — one for each send
+    # Resend campaigns require emails as array of arrays: [[{email_obj}]]
     email_a = {
-        "subject":   SUBJECT,
-        "from_name": FROM_NAME,
-        "from":      FROM_EMAIL,
-        "content":   new_content,
-    }
-    email_b = {
         "subject":   SUBJECT,
         "from_name": FROM_NAME,
         "from":      FROM_EMAIL,
@@ -424,7 +418,6 @@ def create_campaign(html: str) -> str:
     }
     if PREHEADER:
         email_a["preheader_text"] = PREHEADER
-        email_b["preheader_text"] = PREHEADER
 
     update = requests.put(
         f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
@@ -433,7 +426,7 @@ def create_campaign(html: str) -> str:
             "name":        safe_name,
             "language_id": 4,
             "type":        "resend",
-            "emails":      [email_a, email_b],
+            "emails":      [[email_a]],
             "groups":      [MAILERLITE_GROUP_ID],
             "resend_settings": {
                 "test_type":         "subject",
