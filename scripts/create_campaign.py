@@ -375,6 +375,14 @@ def create_campaign(html: str) -> str:
 
     log(f"New content length: {len(new_content)}")
 
+    resend_cfg = {
+        "test_type":         "subject",
+        "select_winner_by":  "c",
+        "b_value":           {"subject": src_subject},
+        "resend_delay":      24,
+        "resend_delay_type": "hours",
+    }
+
     # Step 3 — Write modified content TO the source campaign
     log("Writing modified content to source campaign...")
     write_email = {
@@ -387,11 +395,12 @@ def create_campaign(html: str) -> str:
         f"https://connect.mailerlite.com/api/campaigns/{SOURCE_CAMPAIGN_ID}",
         headers=headers,
         json={
-            "name":        src_name,
-            "language_id": src_data.get("language_id", 4),
-            "type":        src_type,
-            "emails":      [write_email],
-            "groups":      [MAILERLITE_GROUP_ID],
+            "name":            src_name,
+            "language_id":     src_data.get("language_id", 4),
+            "type":            src_type,
+            "emails":          [write_email],
+            "groups":          [MAILERLITE_GROUP_ID],
+            "resend_settings": resend_cfg,
         },
         timeout=30,
     )
@@ -420,33 +429,36 @@ def create_campaign(html: str) -> str:
         f"https://connect.mailerlite.com/api/campaigns/{SOURCE_CAMPAIGN_ID}",
         headers=headers,
         json={
-            "name":        src_name,
-            "language_id": src_data.get("language_id", 4),
-            "type":        src_type,
-            "emails":      [restore_email],
-            "groups":      [MAILERLITE_GROUP_ID],
+            "name":            src_name,
+            "language_id":     src_data.get("language_id", 4),
+            "type":            src_type,
+            "emails":          [restore_email],
+            "groups":          [MAILERLITE_GROUP_ID],
+            "resend_settings": resend_cfg,
         },
         timeout=30,
     )
     log(f"Restore source: {restore.status_code}")
 
-    # Step 6 — Rename the copy with new subject
+    # Step 6 — Rename the copy with new subject and resend settings
     email_meta = {"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL}
     if PREHEADER:
         email_meta["preheader_text"] = PREHEADER
+    rename_cfg = {**resend_cfg, "b_value": {"subject": SUBJECT}}
     rename = requests.put(
         f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
         headers=headers,
         json={
-            "name":        safe_name,
-            "language_id": 4,
-            "type":        "regular",
-            "emails":      [email_meta],
-            "groups":      [MAILERLITE_GROUP_ID],
+            "name":            safe_name,
+            "language_id":     4,
+            "type":            "resend",
+            "emails":          [email_meta],
+            "groups":          [MAILERLITE_GROUP_ID],
+            "resend_settings": rename_cfg,
         },
         timeout=30,
     )
-    log(f"Rename: {rename.status_code}")
+    log(f"Rename: {rename.status_code} | {rename.text[:200]}")
 
     log(f"✅ Draft ready — ID: {campaign_id}")
     return campaign_id
