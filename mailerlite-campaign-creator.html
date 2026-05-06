@@ -1348,34 +1348,63 @@ ${preheaderHtml}
   const emailObj = {
     subject: subject,
     from_name: fromName,
-    from: fromEmail,
-    content: html
+    from: fromEmail
   };
-  if (preheader) emailObj.preheader_text = preheader;
 
-  const payload = {
-    name: subject + ' — ' + today,
-    type: 'regular',
-    emails: [emailObj],
-    groups: [groupId]
+  const mlHeaders = {
+    'Authorization': 'Bearer ' + mlKey,
+    'Content-Type': 'application/json',
+    'Accept': 'application/json'
   };
 
   try {
-    console.log('MailerLite payload:', JSON.stringify(payload, null, 2));
-    const res = await fetch('https://connect.mailerlite.com/api/campaigns', {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + mlKey,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      },
-      body: JSON.stringify(payload)
-    });
-    const data = await res.json();
-    console.log('MailerLite response:', JSON.stringify(data, null, 2));
-    if (!res.ok) throw new Error(data.message || JSON.stringify(data.errors || data));
+    // ── Step 1: Create the campaign shell (no content) ──────────────────────
+    showStatus('send', 'Step 1 of 2 — Creating campaign in MailerLite…', 'info');
+    const createPayload = {
+      name: subject + ' — ' + today,
+      type: 'regular',
+      emails: [emailObj],
+      groups: [groupId]
+    };
+    console.log('MailerLite create payload:', JSON.stringify(createPayload, null, 2));
 
-    const id = data.data?.id || '—';
+    const createRes = await fetch('https://connect.mailerlite.com/api/campaigns', {
+      method: 'POST',
+      headers: mlHeaders,
+      body: JSON.stringify(createPayload)
+    });
+    const createData = await createRes.json();
+    console.log('MailerLite create response:', JSON.stringify(createData, null, 2));
+    if (!createRes.ok) throw new Error(createData.message || JSON.stringify(createData.errors || createData));
+
+    const campaignId = createData.data?.id;
+    const emailId    = createData.data?.emails?.[0]?.id;
+    if (!campaignId || !emailId) throw new Error('Could not read campaign ID or email ID from response.');
+
+    // ── Step 2: Update the campaign email with HTML content ─────────────────
+    showStatus('send', 'Step 2 of 2 — Uploading email content…', 'info');
+    const updatePayload = {
+      emails: [{
+        id: emailId,
+        subject: subject,
+        from_name: fromName,
+        from: fromEmail,
+        content: html,
+        ...(preheader ? { preheader_text: preheader } : {})
+      }]
+    };
+    console.log('MailerLite update payload emails[0].content length:', html.length);
+
+    const updateRes = await fetch(`https://connect.mailerlite.com/api/campaigns/${campaignId}`, {
+      method: 'PUT',
+      headers: mlHeaders,
+      body: JSON.stringify(updatePayload)
+    });
+    const updateData = await updateRes.json();
+    console.log('MailerLite update response:', JSON.stringify(updateData, null, 2));
+    if (!updateRes.ok) throw new Error(updateData.message || JSON.stringify(updateData.errors || updateData));
+
+    const id = campaignId;
     state.draftCreated = true;
     setProgress('draft', 'done');
     setNavDone('send');
