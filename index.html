@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1382,6 +1383,7 @@ ${preheaderHtml}
 
     // ── Step 2: Update the campaign email with HTML content ─────────────────
     showStatus('send', 'Step 2 of 2 — Uploading email content…', 'info');
+
     const updatePayload = {
       name: subject + ' — ' + today,
       type: 'regular',
@@ -1395,13 +1397,21 @@ ${preheaderHtml}
       }],
       groups: [groupId]
     };
-    console.log('MailerLite update payload (no content):', JSON.stringify({...updatePayload, emails: [{...updatePayload.emails[0], content: '[TRUNCATED ' + html.length + ' chars]'}]}, null, 2));
-    console.log('MailerLite update payload emails[0].content length:', html.length);
+
+    // Validate JSON round-trips cleanly before sending
+    let updateBody;
+    try {
+      updateBody = JSON.stringify(updatePayload);
+      JSON.parse(updateBody);
+      console.log('Update JSON valid, length:', updateBody.length);
+    } catch(jsonErr) {
+      throw new Error('JSON build error — ' + jsonErr.message);
+    }
 
     const updateRes = await fetch(`https://connect.mailerlite.com/api/campaigns/${campaignId}`, {
       method: 'PUT',
       headers: mlHeaders,
-      body: JSON.stringify(updatePayload)
+      body: updateBody
     });
     const updateData = await updateRes.json();
     console.log('MailerLite update response:', JSON.stringify(updateData, null, 2));
