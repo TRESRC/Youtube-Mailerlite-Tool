@@ -322,55 +322,49 @@ img{{border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;}
 </html>"""
 
 def create_campaign(html: str) -> str:
-    today = datetime.now(timezone.utc).strftime("%b %d, %Y")
+    import re
+    today    = datetime.now(timezone.utc).strftime("%b %d, %Y")
     safe_name = f"{SUBJECT} - {today}"
-    headers = {
+    headers  = {
         "Authorization": f"Bearer {MAILERLITE_API_KEY}",
         "Content-Type":  "application/json",
         "Accept":        "application/json",
     }
 
-    SOURCE_CAMPAIGN_ID = "121893054089004143"
+    SOURCE_CAMPAIGN_ID = "186558527880300307"
 
-    # Step 1 — Copy the last sent campaign
-    log(f"Copying campaign {SOURCE_CAMPAIGN_ID}...")
-    r = requests.post(
-        f"https://connect.mailerlite.com/api/campaigns/{SOURCE_CAMPAIGN_ID}/copy",
-        headers=headers,
-        timeout=30,
+    # Step 1 — Fetch source campaign content
+    log("Fetching source campaign...")
+    src_r = requests.get(
+        f"https://connect.mailerlite.com/api/campaigns/{SOURCE_CAMPAIGN_ID}",
+        headers=headers, timeout=30,
     )
-    if not r.ok:
-        raise RuntimeError(f"Copy failed: {r.status_code} {r.text}")
+    src_r.raise_for_status()
+    src_data    = src_r.json()["data"]
+    src_email   = src_data["emails"][0]
+    src_content = src_email.get("content", "")
+    src_subject = src_email.get("subject", "")
+    src_name    = src_data["name"]
+    src_type    = src_data["type"]
+    log(f"Source: type={src_type}, content length={len(src_content)}")
 
-    data = r.json()["data"]
-    campaign_id  = data["id"]
-    old_content  = data["emails"][0].get("content", "")
-    old_subject  = data["emails"][0].get("subject", "")
-    resend_cfg   = data.get("resend_settings", {})
-    log(f"Copied — campaign: {campaign_id}")
-    log(f"Resend settings from copy: {json.dumps(resend_cfg)}")
-
-    # Step 2 — Find and replace dynamic content
-    import re
-    new_content = old_content
-    new_content = new_content.replace(old_subject, SUBJECT)
+    # Step 2 — Build modified content via find-and-replace
+    new_content = src_content
+    new_content = new_content.replace(src_subject, SUBJECT)
 
     if IMAGE_URL:
-        img_pattern = r'https://storage\.mlcdn\.com/account_image/318100/(?!S7zmBlAJIt7XKgyLUqSgmNMmnla5iQRvcn2nHClK|BrGoqFUD9UYLkqhmhltu3YEqQdUtDxMunlMGyUlc)[^"\'<>\s]+'
-        imgs = re.findall(img_pattern, old_content)
+        imgs = re.findall(r'https://storage\.mlcdn\.com/account_image/318100/(?!S7zmBlAJIt7XKgyLUqSgmNMmnla5iQRvcn2nHClK|BrGoqFUD9UYLkqhmhltu3YEqQdUtDxMunlMGyUlc)[^"\'<>\s]+', src_content)
         if imgs:
             log(f"Replacing thumbnail: {imgs[0][:80]}...")
             new_content = new_content.replace(imgs[0], IMAGE_URL)
 
-    if YOUTUBE_URL:
-        for old_url in set(re.findall(r'https://(?:youtu\.be|www\.youtube\.com/watch\?v=)[^"\'&\s]+', old_content)):
-            new_content = new_content.replace(old_url, YOUTUBE_URL)
-            log(f"Replaced YouTube: {old_url}")
+    for old_url in set(re.findall(r'https://(?:youtu\.be|www\.youtube\.com/watch\?v=)[^"\'&\s]+', src_content)):
+        new_content = new_content.replace(old_url, YOUTUBE_URL)
+        log(f"Replaced YouTube: {old_url}")
 
-    if BLOG_URL:
-        for old_url in set(re.findall(r'https://theresource\.tv/video/[^"\'&\s]+', old_content)):
-            new_content = new_content.replace(old_url, BLOG_URL)
-            log(f"Replaced blog: {old_url}")
+    for old_url in set(re.findall(r'https://theresource\.tv/video/[^"\'&\s]+', src_content)):
+        new_content = new_content.replace(old_url, BLOG_URL)
+        log(f"Replaced blog: {old_url}")
 
     if BODY_COPY:
         body_match = re.search(r'(<td[^>]*id="bodyText-10"[^>]*>)(.*?)(</td>)', new_content, re.DOTALL)
@@ -381,71 +375,82 @@ def create_campaign(html: str) -> str:
 
     log(f"New content length: {len(new_content)}")
 
-    # Step 3 — Build email object
-    email_obj = {"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL, "content": new_content}
-    if PREHEADER:
-        email_obj["preheader_text"] = PREHEADER
-
-    # Step 4 — Try PUT with exact resend_settings mirrored from copy response
-    # Mirror the exact structure MailerLite returned — no guessing
-    put_body = {
-        "name":            safe_name,
-        "language_id":     4,
-        "type":            "resend",
-        "emails":          [email_obj],
-        "groups":          [MAILERLITE_GROUP_ID],
-        "resend_settings": {
-            "test_type":         "subject",
-            "select_winner_by":  "c",
-            "b_value":           {"subject": SUBJECT},
-            "resend_delay":      24,
-            "resend_delay_type": "hours",
-        },
-    }
-    email_with_content = {
-        "subject":   SUBJECT,
-        "from_name": FROM_NAME,
-        "from":      FROM_EMAIL,
+    # Step 3 — Write modified content TO the source campaign
+    log("Writing modified content to source campaign...")
+    write_email = {
+        "subject":   src_subject,
+        "from_name": src_email.get("from_name", FROM_NAME),
+        "from":      src_email.get("from", FROM_EMAIL),
         "content":   new_content,
     }
-    if PREHEADER:
-        email_with_content["preheader_text"] = PREHEADER
+    write = requests.put(
+        f"https://connect.mailerlite.com/api/campaigns/{SOURCE_CAMPAIGN_ID}",
+        headers=headers,
+        json={
+            "name":        src_name,
+            "language_id": src_data.get("language_id", 4),
+            "type":        src_type,
+            "emails":      [write_email],
+            "groups":      [MAILERLITE_GROUP_ID],
+        },
+        timeout=30,
+    )
+    log(f"Write to source: {write.status_code} | {write.text[:200]}")
 
-    email_meta = {
-        "subject":   SUBJECT,
-        "from_name": FROM_NAME,
-        "from":      FROM_EMAIL,
+    # Step 4 — Copy the (now modified) source
+    log("Copying modified source...")
+    copy_r = requests.post(
+        f"https://connect.mailerlite.com/api/campaigns/{SOURCE_CAMPAIGN_ID}/copy",
+        headers=headers, timeout=30,
+    )
+    if not copy_r.ok:
+        raise RuntimeError(f"Copy failed: {copy_r.status_code} {copy_r.text}")
+    campaign_id = copy_r.json()["data"]["id"]
+    log(f"Copied — new campaign: {campaign_id}")
+
+    # Step 5 — Restore source to original content immediately
+    log("Restoring source campaign...")
+    restore_email = {
+        "subject":   src_subject,
+        "from_name": src_email.get("from_name", FROM_NAME),
+        "from":      src_email.get("from", FROM_EMAIL),
+        "content":   src_content,
     }
+    restore = requests.put(
+        f"https://connect.mailerlite.com/api/campaigns/{SOURCE_CAMPAIGN_ID}",
+        headers=headers,
+        json={
+            "name":        src_name,
+            "language_id": src_data.get("language_id", 4),
+            "type":        src_type,
+            "emails":      [restore_email],
+            "groups":      [MAILERLITE_GROUP_ID],
+        },
+        timeout=30,
+    )
+    log(f"Restore source: {restore.status_code}")
+
+    # Step 6 — Rename the copy with new subject
+    email_meta = {"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL}
     if PREHEADER:
         email_meta["preheader_text"] = PREHEADER
-
-    base = {
-        "name":        safe_name,
-        "language_id": 4,
-        "type":        "regular",
-        "groups":      [MAILERLITE_GROUP_ID],
-    }
-
-    # Step A — Prime: send content inside emails (will 422 but may write content)
-    r_prime = requests.put(
+    rename = requests.put(
         f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
         headers=headers,
-        json={**base, "emails": [email_with_content]},
+        json={
+            "name":        safe_name,
+            "language_id": 4,
+            "type":        "regular",
+            "emails":      [email_meta],
+            "groups":      [MAILERLITE_GROUP_ID],
+        },
         timeout=30,
     )
-    log(f"Prime status: {r_prime.status_code}")
+    log(f"Rename: {rename.status_code}")
 
-    # Step B — Follow up immediately with content at top level
-    r_top = requests.put(
-        f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
-        headers=headers,
-        json={**base, "emails": [email_meta], "content": new_content},
-        timeout=30,
-    )
-    log(f"Top-level content status: {r_top.status_code} | {r_top.text[:200]}")
+    log(f"✅ Draft ready — ID: {campaign_id}")
+    return campaign_id
 
-    # Step C — Then try nested array format
-    r_nested = requests.put(
         f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
         headers=headers,
         json={**base, "emails": [[email_with_content]]},
