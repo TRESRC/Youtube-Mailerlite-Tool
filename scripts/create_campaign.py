@@ -395,12 +395,13 @@ def create_campaign(html: str) -> str:
     campaign_id = copy_data["id"]
     log(f"Copied — draft campaign: {campaign_id}")
 
-    # Step 4a — Update name and subject on draft (no content)
+    # Key insight: content must NOT be in emails[] for resend campaigns
+    # Instead send emails[] without content AND content as top-level key
     email_meta = {"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL}
     if PREHEADER:
         email_meta["preheader_text"] = PREHEADER
 
-    meta_update = requests.put(
+    write = requests.put(
         f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
         headers=headers,
         json={
@@ -408,29 +409,13 @@ def create_campaign(html: str) -> str:
             "language_id":     4,
             "type":            "resend",
             "emails":          [email_meta],
+            "content":         new_content,
             "groups":          [MAILERLITE_GROUP_ID],
             "resend_settings": resend_cfg,
         },
         timeout=30,
     )
-    log(f"Meta update: {meta_update.status_code} | {meta_update.text[:200]}")
-
-    # Step 4b — Update content separately with no emails wrapper conflict
-    email_with_content = {**email_meta, "content": new_content}
-    content_update = requests.put(
-        f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
-        headers=headers,
-        json={
-            "name":            safe_name,
-            "language_id":     4,
-            "type":            "resend",
-            "emails":          [email_with_content],
-            "groups":          [MAILERLITE_GROUP_ID],
-            "resend_settings": resend_cfg,
-        },
-        timeout=30,
-    )
-    log(f"Content update: {content_update.status_code} | {content_update.text[:200]}")
+    log(f"Write: {write.status_code} | {write.text[:300]}")
 
     log(f"✅ Draft ready — ID: {campaign_id}")
     return campaign_id
