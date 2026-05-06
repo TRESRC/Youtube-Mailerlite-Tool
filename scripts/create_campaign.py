@@ -408,12 +408,11 @@ def create_campaign(html: str) -> str:
 
     log(f"New content length: {len(new_content)}")
 
-    # Step 3 — Update the campaign with new name, subject, preheader and content
+    # Step 3 — Update name, subject, resend_settings (no content — avoid the array error)
     email_update = {
         "subject":   SUBJECT,
         "from_name": FROM_NAME,
         "from":      FROM_EMAIL,
-        "content":   new_content,
     }
     if PREHEADER:
         email_update["preheader_text"] = PREHEADER
@@ -426,16 +425,38 @@ def create_campaign(html: str) -> str:
             "type":   "resend",
             "emails": [email_update],
             "groups": [MAILERLITE_GROUP_ID],
+            "resend_settings": {
+                "test_type":         "subject",
+                "select_winner_by":  "c",
+                "b_value":           SUBJECT,
+                "resend_delay":      24,
+                "resend_delay_type": "hours",
+            },
         },
         timeout=30,
     )
-    log(f"Update status: {update.status_code}")
+    log(f"Name/subject update status: {update.status_code}")
     if not update.ok:
-        log(f"Update response: {update.text[:500]}")
-        log(f"⚠️  Content update failed but draft exists: {campaign_id}")
+        log(f"Name/subject update response: {update.text[:500]}")
+
+    # Step 4 — Update content via the email endpoint directly
+    content_update = requests.put(
+        f"https://connect.mailerlite.com/api/campaigns/{campaign_id}/emails/{email_id}",
+        headers=headers,
+        json={
+            "subject":   SUBJECT,
+            "from_name": FROM_NAME,
+            "from":      FROM_EMAIL,
+            "content":   new_content,
+            **({"preheader_text": PREHEADER} if PREHEADER else {}),
+        },
+        timeout=30,
+    )
+    log(f"Content update status: {content_update.status_code}")
+    if not content_update.ok:
+        log(f"Content update response: {content_update.text[:500]}")
     else:
         log("✅ Content updated successfully")
-
     log(f"✅ Draft ready — ID: {campaign_id}")
     return campaign_id
 
