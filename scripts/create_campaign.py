@@ -428,7 +428,7 @@ def create_campaign(html: str) -> str:
             "resend_settings": {
                 "test_type":         "subject",
                 "select_winner_by":  "c",
-                "b_value":           SUBJECT,
+                "b_value":           [{"subject": SUBJECT}],
                 "resend_delay":      24,
                 "resend_delay_type": "hours",
             },
@@ -438,25 +438,21 @@ def create_campaign(html: str) -> str:
     log(f"Name/subject update status: {update.status_code}")
     if not update.ok:
         log(f"Name/subject update response: {update.text[:500]}")
+    else:
+        log("✅ Name/subject updated")
 
-    # Step 4 — Update content via the email endpoint directly
-    content_update = requests.put(
-        f"https://connect.mailerlite.com/api/campaigns/{campaign_id}/emails/{email_id}",
+    # Step 4 — Fetch the campaign to get the correct email IDs for content update
+    log("Fetching campaign to get email structure...")
+    fetch = requests.get(
+        f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
         headers=headers,
-        json={
-            "subject":   SUBJECT,
-            "from_name": FROM_NAME,
-            "from":      FROM_EMAIL,
-            "content":   new_content,
-            **({"preheader_text": PREHEADER} if PREHEADER else {}),
-        },
         timeout=30,
     )
-    log(f"Content update status: {content_update.status_code}")
-    if not content_update.ok:
-        log(f"Content update response: {content_update.text[:500]}")
+    if fetch.ok:
+        fetch_data = fetch.json()["data"]
+        log(f"Campaign emails structure: {json.dumps([{'id': e['id'], 'type': e.get('type')} for e in fetch_data.get('emails', [])], indent=2)}")
     else:
-        log("✅ Content updated successfully")
+        log(f"Fetch failed: {fetch.status_code}")
     log(f"✅ Draft ready — ID: {campaign_id}")
     return campaign_id
 
