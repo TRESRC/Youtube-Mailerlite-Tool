@@ -12,6 +12,8 @@ jobs:
   create-email-campaign:
     name: Check YouTube & Create MailerLite Draft
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       # 1. Checkout the repo (needed to read/write seen_videos.json)
