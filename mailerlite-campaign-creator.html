@@ -375,61 +375,51 @@
     <div class="page active" id="page-config">
       <div class="page-header">
         <div class="page-title">Configuration</div>
-        <div class="page-desc">Enter your API credentials. These are saved in your browser's local storage so you only need to do this once per device.</div>
+        <div class="page-desc">All API keys live in GitHub Secrets. You just need a Personal Access Token so this tool can trigger the workflow on your behalf.</div>
       </div>
 
       <div id="status-config" class="status"></div>
 
-      <div class="section-title">YouTube</div>
+      <div class="section-title">GitHub</div>
       <div class="field-row">
         <div class="field">
-          <label>API key</label>
-          <input type="password" id="yt-key" placeholder="AIza..." autocomplete="off" />
+          <label>Personal Access Token</label>
+          <input type="password" id="gh-token" placeholder="ghp_..." autocomplete="off" />
         </div>
         <div class="field">
-          <label>Channel ID</label>
-          <input type="text" id="yt-channel" placeholder="UCxxxxxxxx" />
+          <label>Repository <span style="font-size:10px;font-weight:400;color:var(--text3);text-transform:none;letter-spacing:0;">owner/repo</span></label>
+          <input type="text" id="gh-repo" placeholder="tresrc/Youtube-Mailerlite-Tool" />
         </div>
+      </div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:1.25rem;line-height:1.6;">
+        Create a token at <a href="https://github.com/settings/tokens/new" target="_blank" style="color:var(--accent-dim);">github.com/settings/tokens</a> with <strong style="color:var(--text2);">workflow</strong> scope. Saved to local storage — one time only.
       </div>
 
       <div class="divider"></div>
-      <div class="section-title">WordPress</div>
+      <div class="section-title">YouTube + WordPress <span style="font-size:10px;font-weight:400;color:var(--text3);text-transform:none;letter-spacing:0;">— needed to fetch content</span></div>
       <div class="field-row">
         <div class="field">
-          <label>Site URL</label>
-          <input type="url" id="wp-url" placeholder="https://yourblog.com" />
+          <label>YouTube API key</label>
+          <input type="password" id="yt-key" placeholder="AIza..." autocomplete="off" />
         </div>
         <div class="field">
-          <label>Username</label>
+          <label>YouTube Channel ID</label>
+          <input type="text" id="yt-channel" placeholder="UCxxxxxxxx" />
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>WordPress site URL</label>
+          <input type="url" id="wp-url" placeholder="https://theresource.tv" />
+        </div>
+        <div class="field">
+          <label>WordPress username</label>
           <input type="text" id="wp-user" placeholder="admin" />
         </div>
       </div>
       <div class="field">
-        <label>Application password</label>
+        <label>WordPress application password</label>
         <input type="password" id="wp-pass" placeholder="xxxx xxxx xxxx xxxx xxxx xxxx" autocomplete="off" />
-      </div>
-
-      <div class="divider"></div>
-      <div class="section-title">MailerLite</div>
-      <div class="field-row">
-        <div class="field">
-          <label>API key</label>
-          <input type="password" id="ml-key" placeholder="eyJ..." autocomplete="off" />
-        </div>
-        <div class="field">
-          <label>Group ID</label>
-          <input type="text" id="ml-group" placeholder="123456789" />
-        </div>
-      </div>
-      <div class="field-row">
-        <div class="field">
-          <label>From name</label>
-          <input type="text" id="from-name" placeholder="Your Brand" />
-        </div>
-        <div class="field">
-          <label>From email</label>
-          <input type="email" id="from-email" placeholder="hello@yourbrand.com" />
-        </div>
       </div>
 
       <div class="btn-row">
@@ -602,7 +592,8 @@
       <div id="success-card" style="display:none;" class="success-card">
         <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;">Draft created</div>
         <div class="campaign-id" id="campaign-id-display">—</div>
-        <p>Go to <strong style="color:var(--text);">MailerLite → Campaigns → Drafts</strong> to review and send.</p>
+        <p>GitHub Actions is building your campaign now — takes ~30 seconds. Go to <strong style="color:var(--text);">MailerLite → Campaigns → Drafts</strong> to review and send once it appears.</p>
+        <p style="margin-top:8px;font-size:12px;color:var(--text3);">You can also watch it run at <a href="https://github.com/tresrc/Youtube-Mailerlite-Tool/actions" target="_blank" style="color:var(--accent-dim);">github.com → Actions</a></p>
         <div class="btn-row" style="margin-top:16px;">
           <button class="btn btn-ghost" onclick="startFresh()">Start next campaign</button>
         </div>
@@ -617,7 +608,7 @@
 const state = { ytFetched: false, wpFetched: false, linksFilled: false, draftCreated: false };
 
 // ── Local storage config ──────────────────────────────────────────────────────
-const CONFIG_KEYS = ['yt-key','yt-channel','wp-url','wp-user','wp-pass','ml-key','ml-group','from-name','from-email'];
+const CONFIG_KEYS = ['gh-token','gh-repo','yt-key','yt-channel','wp-url','wp-user','wp-pass'];
 
 function saveConfig() {
   CONFIG_KEYS.forEach(k => {
@@ -939,20 +930,30 @@ async function fetchAll() {
   }
 }
 
-// ── Create MailerLite campaign ────────────────────────────────────────────────
+// ── Trigger GitHub Actions workflow ──────────────────────────────────────────
 async function createCampaign() {
-  const mlKey    = document.getElementById('ml-key').value.trim();
-  const groupId  = document.getElementById('ml-group').value.trim();
-  const fromName = document.getElementById('from-name').value.trim();
-  const fromEmail= document.getElementById('from-email').value.trim();
-  const subject  = document.getElementById('subject').value.trim();
-  const preheader= document.getElementById('preheader').value.trim();
-  const imageUrlField = document.getElementById('image-url');
-  const rawImageUrl   = imageUrlField.value.trim();
-  const processedDataUrl = imageUrlField.dataset.processed || '';
+  const ghToken = document.getElementById('gh-token').value.trim();
+  const ghRepo  = document.getElementById('gh-repo').value.trim();
+  const subject = document.getElementById('subject').value.trim();
 
-  // Upload processed PNG to WordPress media if we have one and WP creds
+  if (!ghToken || !ghRepo) {
+    showStatus('send', 'Missing GitHub token or repo — go to Configuration first.', 'error'); return;
+  }
+  if (!subject) {
+    showStatus('send', 'Subject line is required — go to Content and fill it in.', 'error'); return;
+  }
+
+  const btn = document.getElementById('create-btn');
+  btn.disabled = true;
+  btn.textContent = 'Working…';
+  setProgress('draft', 'active');
+
+  // Step 1: Upload processed thumbnail to WordPress
+  const imageUrlField    = document.getElementById('image-url');
+  const rawImageUrl      = imageUrlField.value.trim();
+  const processedDataUrl = imageUrlField.dataset.processed || '';
   let imageUrl = rawImageUrl;
+
   if (processedDataUrl && processedDataUrl.startsWith('data:')) {
     const wpUrl  = document.getElementById('wp-url').value.trim();
     const wpUser = document.getElementById('wp-user').value.trim();
@@ -961,10 +962,9 @@ async function createCampaign() {
       try {
         showStatus('send', 'Uploading processed thumbnail to WordPress…', 'info');
         const blob = await (await fetch(processedDataUrl)).blob();
-        const filename = 'thumbnail-' + Date.now() + '.png';
         const formData = new FormData();
-        formData.append('file', blob, filename);
-        formData.append('title', document.getElementById('subject').value.trim());
+        formData.append('file', blob, 'thumbnail-' + Date.now() + '.png');
+        formData.append('title', subject);
         const uploadRes = await fetch(wpUrl.replace(/\/$/, '') + '/wp-json/wp/v2/media', {
           method: 'POST',
           headers: { 'Authorization': 'Basic ' + btoa(unescape(encodeURIComponent(wpUser + ':' + wpPass))) },
@@ -973,462 +973,56 @@ async function createCampaign() {
         if (uploadRes.ok) {
           const media = await uploadRes.json();
           imageUrl = media.source_url || rawImageUrl;
-          console.log('Thumbnail uploaded to WordPress:', imageUrl);
-        } else {
-          console.warn('WP media upload failed, falling back to YouTube URL');
         }
       } catch(e) {
-        console.warn('WP media upload error:', e.message, '— falling back to YouTube URL');
+        console.warn('WP upload failed, using raw URL:', e.message);
       }
     }
   }
-  const body     = document.getElementById('body-copy').value.trim();
 
-  const links = {
-    youtube:   document.getElementById('youtube-url').value.trim(),
-    blog:      document.getElementById('blog-url').value.trim(),
-    instagram: document.getElementById('instagram-url').value.trim(),
-    facebook:  document.getElementById('facebook-url').value.trim(),
-    linkedin:  document.getElementById('linkedin-url').value.trim(),
-    podcast:   document.getElementById('podcast-url').value.trim(),
-  };
+  // Step 2: Trigger GitHub Actions workflow
+  showStatus('send', 'Triggering GitHub Actions workflow…', 'info');
 
-  if (!mlKey || !groupId || !fromName || !fromEmail) {
-    showStatus('send', 'Missing MailerLite credentials — go to Configuration first.', 'error'); return;
-  }
-  if (!subject) {
-    showStatus('send', 'Subject line is required — go to Content and fill it in.', 'error'); return;
-  }
-
-  const btn = document.getElementById('create-btn');
-  btn.disabled = true;
-  btn.textContent = 'Creating…';
-  showStatus('send', 'Creating draft campaign in MailerLite…', 'info');
-  setProgress('draft', 'active');
-
-  const today = new Date().toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
-
-  const preheaderHtml = preheader
-    ? `<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;color:#f6f8f9;">${preheader}&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;</div>`
-    : '';
-
-
-  const html = `<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 3.2//EN">
-<html lang="">
-<head>
-<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>${subject}</title>
-<style type="text/css">
-body{margin:0;padding:0;background-color:#f6f8f9;}
-body,table,td,p,a,li{-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;}
-table{border-spacing:0;border-collapse:collapse;}
-img{border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;}
-@media screen{body{font-family:'Montserrat',sans-serif;}}
-@media only screen and (max-width:640px){
-  .mlContentOuter{padding-left:15px!important;padding-right:15px!important;}
-  .mlContentButton a{display:block!important;width:auto!important;}
-  .mobileHide{display:none!important;}
-  .marginBottom{margin-bottom:15px!important;}
-  .mlContentImage img{width:100%!important;height:auto!important;}
-}
-</style>
-</head>
-<body style="padding:0;margin:0;background-color:#f6f8f9;">
-${preheaderHtml}
-<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#f6f8f9">
-  <tr><td align="center">
-
-    <!-- TOP PREHEADER BAR -->
-    <table cellpadding="0" cellspacing="0" border="0" align="center" width="640" style="width:640px;min-width:640px;">
-      <tr><td colspan="2" height="20"></td></tr>
-      <tr>
-        <td align="left" style="font-family:'Montserrat',sans-serif;color:#111111;font-size:12px;line-height:18px;">${preheader}</td>
-        <td align="right" style="font-family:'Montserrat',sans-serif;color:#111111;font-size:12px;line-height:18px;"><a href="{$url}" style="color:#111111;">View in browser</a></td>
-      </tr>
-      <tr><td colspan="2" height="20"></td></tr>
-    </table>
-
-    <!-- MAIN EMAIL CARD -->
-    <table align="center" border="0" bgcolor="#ffffff" cellpadding="0" cellspacing="0" width="640" style="width:640px;min-width:640px;">
-      <tr><td>
-
-        <!-- HEADER LOGO IMAGE -->
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="640" style="width:640px;min-width:640px;">
-          <tr><td align="center" style="padding:0;" class="mlContentImage">
-            <img src="https://storage.mlcdn.com/account_image/318100/S7zmBlAJIt7XKgyLUqSgmNMmnla5iQRvcn2nHClK.png" border="0" alt="The RE Source" width="637" style="display:block;">
-          </td></tr>
-        </table>
-
-        <!-- SPACING -->
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="640" style="width:640px;min-width:640px;">
-          <tr><td height="20" style="line-height:20px;min-height:20px;"></td></tr>
-        </table>
-
-        <!-- NEW EPISODE LABEL + TITLE -->
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="640" style="width:640px;min-width:640px;">
-          <tr><td align="center" style="padding:0 40px;" class="mlContentOuter">
-            <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="100%">
-              <tr><td align="center" style="font-family:'Montserrat',sans-serif;font-size:13px;font-weight:400;line-height:150%;color:#dc3545;text-align:center;">NEW EPISODE</td></tr>
-              <tr><td height="20"></td></tr>
-              <tr><td align="center" style="font-family:'Montserrat',sans-serif;font-size:29px;font-weight:700;line-height:150%;color:#111111;text-align:center;">
-                <a href="${links.youtube}" style="text-decoration:none;color:#111111;" target="_blank">${subject}</a>
-              </td></tr>
-            </table>
-          </td></tr>
-        </table>
-
-        <!-- SPACING -->
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="640" style="width:640px;min-width:640px;">
-          <tr><td height="20" style="line-height:20px;min-height:20px;"></td></tr>
-        </table>
-
-        <!-- THUMBNAIL IMAGE -->
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="640" style="width:640px;min-width:640px;">
-          <tr><td align="center" style="padding:0 40px;" class="mlContentOuter">
-            <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="100%">
-              <tr><td align="center" class="mlContentImage">
-                ${imageUrl ? `<a href="${links.youtube}" target="_blank"><img src="${imageUrl}" border="0" alt="${subject.replace(/"/g,'')}" width="560" style="display:block;width:100%;max-width:560px;height:auto;"></a>` : ''}
-              </td></tr>
-            </table>
-          </td></tr>
-        </table>
-
-        <!-- SPACING -->
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="640" style="width:640px;min-width:640px;">
-          <tr><td height="20" style="line-height:20px;min-height:20px;"></td></tr>
-        </table>
-
-        <!-- BODY COPY -->
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="640" style="width:640px;min-width:640px;">
-          <tr><td align="center" style="padding:0 40px;" class="mlContentOuter">
-            <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="100%">
-              <tr><td style="font-family:'Montserrat',sans-serif;font-size:14px;line-height:150%;color:#6f6f6f;">
-                ${body.split('\n').filter(l=>l.trim()).map(l=>`<p style="margin-top:0;margin-bottom:10px;line-height:150%;">${l}</p>`).join('')}
-              </td></tr>
-            </table>
-          </td></tr>
-        </table>
-
-        <!-- SPACING -->
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="640" style="width:640px;min-width:640px;">
-          <tr><td height="40" style="line-height:40px;min-height:40px;"></td></tr>
-        </table>
-
-        <!-- BUTTON ROW 1: Instagram | Facebook | Podcast -->
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="640" style="width:640px;min-width:640px;">
-          <tr><td align="center" style="padding:0 40px;" class="mlContentOuter">
-            <table role="presentation" cellpadding="0" align="center" width="100%" border="0">
-              <tr>
-                <td valign="top">
-                  <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="left" width="170" class="marginBottom" style="width:170px;min-width:170px;float:left;">
-                    <tr><td align="center" style="font-family:'Montserrat',sans-serif;">
-                      <a href="${links.instagram}" target="_blank" style="font-family:'Montserrat',sans-serif;background-color:#ffffff;border:2px solid #cb0000;border-radius:1px;color:#dc3545;display:inline-block;font-size:14px;font-weight:700;line-height:20px;padding:9px 0;text-align:center;text-decoration:none;width:166px;">Instagram</a>
-                    </td></tr>
-                  </table>
-                </td>
-                <td width="25" valign="top"><table cellpadding="0" cellspacing="0" border="0" width="25" class="mobileHide" style="width:25px;min-width:25px;"><tr><td width="25" height="25"></td></tr></table></td>
-                <td width="170" valign="top">
-                  <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="170" class="marginBottom" style="width:170px;min-width:170px;">
-                    <tr><td align="center" style="font-family:'Montserrat',sans-serif;">
-                      <a href="${links.facebook}" target="_blank" style="font-family:'Montserrat',sans-serif;background-color:#ffffff;border:2px solid #cb0000;border-radius:1px;color:#dc3545;display:inline-block;font-size:14px;font-weight:700;line-height:20px;padding:9px 0;text-align:center;text-decoration:none;width:166px;">Facebook</a>
-                    </td></tr>
-                  </table>
-                </td>
-                <td width="25" valign="top"><table cellpadding="0" cellspacing="0" border="0" width="25" class="mobileHide" style="width:25px;min-width:25px;"><tr><td width="25" height="25"></td></tr></table></td>
-                <td valign="top" width="170">
-                  <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="right" width="170" style="width:170px;min-width:170px;float:right;">
-                    <tr><td align="center" style="font-family:'Montserrat',sans-serif;">
-                      <a href="${links.podcast}" target="_blank" style="font-family:'Montserrat',sans-serif;background-color:#ffffff;border:2px solid #cb0000;border-radius:1px;color:#dc3545;display:inline-block;font-size:14px;font-weight:700;line-height:20px;padding:9px 0;text-align:center;text-decoration:none;width:166px;">Podcast</a>
-                    </td></tr>
-                  </table>
-                </td>
-              </tr>
-            </table>
-          </td></tr>
-        </table>
-
-        <!-- SPACING -->
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="640" style="width:640px;min-width:640px;">
-          <tr><td height="20" style="line-height:20px;min-height:20px;"></td></tr>
-        </table>
-
-        <!-- BUTTON ROW 2: Website | LinkedIn | YouTube -->
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="640" style="width:640px;min-width:640px;">
-          <tr><td align="center" style="padding:0 40px;" class="mlContentOuter">
-            <table role="presentation" cellpadding="0" align="center" width="100%" border="0">
-              <tr>
-                <td valign="top">
-                  <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="left" width="170" class="marginBottom" style="width:170px;min-width:170px;float:left;">
-                    <tr><td align="center" style="font-family:'Montserrat',sans-serif;">
-                      <a href="${links.blog}" target="_blank" style="font-family:'Montserrat',sans-serif;background-color:#ffffff;border:2px solid #cb0000;border-radius:1px;color:#dc3545;display:inline-block;font-size:14px;font-weight:700;line-height:20px;padding:9px 0;text-align:center;text-decoration:none;width:166px;">Website</a>
-                    </td></tr>
-                  </table>
-                </td>
-                <td width="25" valign="top"><table cellpadding="0" cellspacing="0" border="0" width="25" class="mobileHide" style="width:25px;min-width:25px;"><tr><td width="25" height="25"></td></tr></table></td>
-                <td width="170" valign="top">
-                  <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="170" class="marginBottom" style="width:170px;min-width:170px;">
-                    <tr><td align="center" style="font-family:'Montserrat',sans-serif;">
-                      <a href="${links.linkedin}" target="_blank" style="font-family:'Montserrat',sans-serif;background-color:#ffffff;border:2px solid #cb0000;border-radius:1px;color:#dc3545;display:inline-block;font-size:14px;font-weight:700;line-height:20px;padding:9px 0;text-align:center;text-decoration:none;width:166px;">LinkedIn</a>
-                    </td></tr>
-                  </table>
-                </td>
-                <td width="25" valign="top"><table cellpadding="0" cellspacing="0" border="0" width="25" class="mobileHide" style="width:25px;min-width:25px;"><tr><td width="25" height="25"></td></tr></table></td>
-                <td valign="top" width="170">
-                  <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="right" width="170" style="width:170px;min-width:170px;float:right;">
-                    <tr><td align="center" style="font-family:'Montserrat',sans-serif;">
-                      <a href="${links.youtube}" target="_blank" style="font-family:'Montserrat',sans-serif;background-color:#ffffff;border:2px solid #cb0000;border-radius:1px;color:#dc3545;display:inline-block;font-size:14px;font-weight:700;line-height:20px;padding:9px 0;text-align:center;text-decoration:none;width:166px;">YouTube</a>
-                    </td></tr>
-                  </table>
-                </td>
-              </tr>
-            </table>
-          </td></tr>
-        </table>
-
-        <!-- SPACING + DIVIDER -->
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="640" style="width:640px;min-width:640px;">
-          <tr><td height="20" style="line-height:20px;min-height:20px;"></td></tr>
-        </table>
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="640" style="width:640px;min-width:640px;">
-          <tr><td align="center">
-            <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="100%" style="border-top:1px solid #ededf3;border-collapse:initial;">
-              <tr><td height="20" style="line-height:20px;min-height:20px;"></td></tr>
-            </table>
-          </td></tr>
-        </table>
-
-        <!-- INDUSTRY PARTNER SPOTLIGHT HEADING -->
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="640" style="width:640px;min-width:640px;">
-          <tr><td align="center" style="padding:0 40px;" class="mlContentOuter">
-            <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="100%">
-              <tr><td align="center" style="font-family:'Montserrat',sans-serif;font-size:28px;font-weight:700;line-height:150%;color:#111111;text-align:center;">Industry Partner Spotlight</td></tr>
-            </table>
-          </td></tr>
-        </table>
-
-        <!-- PARTNER DESCRIPTION -->
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="640" style="width:640px;min-width:640px;">
-          <tr><td height="20" style="line-height:20px;min-height:20px;"></td></tr>
-        </table>
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="640" style="width:640px;min-width:640px;">
-          <tr><td align="center" style="padding:0 40px;" class="mlContentOuter">
-            <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="100%">
-              <tr><td style="font-family:'Montserrat',sans-serif;font-size:14px;line-height:150%;color:#6f6f6f;text-align:center;">
-                <p style="margin-top:0;margin-bottom:0;line-height:150%;text-align:center;">A longtime partner and trusted source for daily mortgage industry insights.</p>
-              </td></tr>
-            </table>
-          </td></tr>
-        </table>
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="640" style="width:640px;min-width:640px;">
-          <tr><td height="20" style="line-height:20px;min-height:20px;"></td></tr>
-        </table>
-
-        <!-- PARTNER IMAGE -->
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="640" style="width:640px;min-width:640px;">
-          <tr><td align="center" style="padding:0;" class="mlContentImage">
-            <a href="https://www.chrismancommentary.com/" target="_blank">
-              <img src="https://storage.mlcdn.com/account_image/318100/BrGoqFUD9UYLkqhmhltu3YEqQdUtDxMunlMGyUlc.png" border="0" alt="Chrisman Commentary" width="600" style="display:block;width:100%;max-width:600px;height:auto;">
-            </a>
-          </td></tr>
-        </table>
-
-        <!-- DIVIDER -->
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="640" style="width:640px;min-width:640px;">
-          <tr><td height="20" style="line-height:20px;min-height:20px;"></td></tr>
-        </table>
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="640" style="width:640px;min-width:640px;">
-          <tr><td align="center">
-            <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="100%" style="border-top:1px solid #ededf3;border-collapse:initial;">
-              <tr><td height="20" style="line-height:20px;min-height:20px;"></td></tr>
-            </table>
-          </td></tr>
-        </table>
-
-        <!-- BORDERED QUOTE BOX -->
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="640" style="width:640px;min-width:640px;">
-          <tr><td height="20" style="line-height:20px;min-height:20px;"></td></tr>
-        </table>
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="640" style="width:640px;min-width:640px;">
-          <tr><td align="center" style="padding:0 40px;" class="mlContentOuter">
-            <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="560" style="border-radius:2px;border-collapse:separate;">
-              <tr><td align="center" style="padding:0 40px;border:1px solid #E6E6E6;border-radius:2px;" bgcolor="#FCFCFC" class="mlContentOuter">
-                <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="100%">
-                  <tr><td height="30"></td></tr>
-                  <tr><td style="font-family:'Montserrat',sans-serif;font-size:14px;line-height:150%;color:#6f6f6f;">
-                    <p style="margin-top:0;margin-bottom:10px;line-height:150%;text-align:center;"><strong>Our community of over 50,000 subscribers depend on our weekly shows to help keep them inspired, avoid burnout &amp; keep them extremely relevant in their local communities.</strong></p>
-                    <p style="margin-top:0;margin-bottom:0;line-height:150%;text-align:center;">We invite you to watch a few trending episodes to help you reset your mindset &amp; focus on thriving during a challenging market.</p>
-                  </td></tr>
-                  <tr><td height="30"></td></tr>
-                </table>
-              </td></tr>
-            </table>
-          </td></tr>
-        </table>
-
-        <!-- DIVIDER -->
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="640" style="width:640px;min-width:640px;">
-          <tr><td height="20" style="line-height:20px;min-height:20px;"></td></tr>
-        </table>
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="640" style="width:640px;min-width:640px;">
-          <tr><td align="center">
-            <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="100%" style="border-top:1px solid #ededf3;border-collapse:initial;">
-              <tr><td height="20" style="line-height:20px;min-height:20px;"></td></tr>
-            </table>
-          </td></tr>
-        </table>
-
-      </td></tr>
-    </table>
-
-    <!-- FOOTER -->
-    <table align="center" border="0" bgcolor="#ffffff" cellpadding="0" cellspacing="0" width="640" style="width:640px;min-width:640px;">
-      <tr><td>
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="640" style="width:640px;min-width:640px;">
-          <tr><td height="30" style="line-height:30px;min-height:30px;"></td></tr>
-        </table>
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="640" style="width:640px;min-width:640px;">
-          <tr><td align="center" style="padding:0 40px;" class="mlContentOuter">
-            <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="100%">
-              <tr><td align="left" style="font-family:'Montserrat',sans-serif;font-size:14px;font-weight:700;line-height:150%;color:#111111;">TheREsource.tv</td></tr>
-            </table>
-          </td></tr>
-        </table>
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="640" style="width:640px;min-width:640px;">
-          <tr><td height="10"></td></tr>
-        </table>
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="640" style="width:640px;min-width:640px;">
-          <tr><td align="center" style="padding:0 40px;" class="mlContentOuter">
-            <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="100%">
-              <tr><td align="center">
-                <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="left" width="267" style="width:267px;min-width:267px;" class="marginBottom">
-                  <tr><td align="left" style="font-family:'Montserrat',sans-serif;font-size:12px;line-height:150%;color:#111111;">
-                    <p style="margin-top:0;margin-bottom:10px;">1029 E Main</p>
-                    <p style="margin-top:0;margin-bottom:0;">Puyallup, WA 98372</p>
-                  </td></tr>
-                  <tr><td height="25"></td></tr>
-                  <tr><td align="center">
-                    <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="left">
-                      <tr>
-                        <td align="center" width="24" style="padding:0 5px;"><a href="https://www.instagram.com/theresourcetv/" target="_blank"><img width="24" alt="instagram" src="https://assets.mlcdn.com/ml/images/icons/default/round/black/instagram.png" style="display:block;" border="0"></a></td>
-                        <td align="center" width="24" style="padding:0 5px;"><a href="http://www.facebook.com/theresourcetv" target="_blank"><img width="24" alt="facebook" src="https://assets.mlcdn.com/ml/images/icons/default/round/black/facebook.png" style="display:block;" border="0"></a></td>
-                        <td align="center" width="24" style="padding:0 5px;"><a href="https://youtube.com/theresourcetv?sub_confirmation=1" target="_blank"><img width="24" alt="youtube" src="https://assets.mlcdn.com/ml/images/icons/default/round/black/youtube.png" style="display:block;" border="0"></a></td>
-                        <td align="center" width="24" style="padding:0 5px;"><a href="https://www.linkedin.com/in/the-resourcetv-1a635926/" target="_blank"><img width="24" alt="linkedin" src="https://assets.mlcdn.com/ml/images/icons/default/round/black/linkedin.png" style="display:block;" border="0"></a></td>
-                        <td align="center" width="24" style="padding:0 5px;"><a href="https://theresource.tv/?utm_source=newsletter&utm_campaign=welcomeemail" target="_blank"><img width="24" alt="website" src="https://assets.mlcdn.com/ml/images/icons/default/round/black/website.png" style="display:block;" border="0"></a></td>
-                      </tr>
-                    </table>
-                  </td></tr>
-                </table>
-                <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="right" width="267" style="width:267px;min-width:267px;">
-                  <tr><td align="right" style="font-family:'Montserrat',sans-serif;font-size:12px;line-height:150%;color:#111111;">
-                    <p style="margin-top:0;margin-bottom:10px;">As an industry leader &amp; a committed expert, we want to help you continue to thrive.</p>
-                    <p style="margin-top:0;margin-bottom:0;">If you prefer not to receive our weekly emails, please use the link below.</p>
-                  </td></tr>
-                  <tr><td height="10"></td></tr>
-                  <tr><td align="right" style="font-family:'Montserrat',sans-serif;font-size:12px;line-height:150%;color:#111111;">
-                    <a href="{$unsubscribe}" style="color:#111111;text-decoration:underline;">Unsubscribe</a>
-                  </td></tr>
-                </table>
-              </td></tr>
-            </table>
-          </td></tr>
-        </table>
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="640" style="width:640px;min-width:640px;">
-          <tr><td height="40" style="line-height:40px;min-height:40px;"></td></tr>
-        </table>
-      </td></tr>
-    </table>
-
-  </td></tr>
-</table>
-</body>
-</html>`;
-
-  const emailObj = {
-    subject: subject,
-    from_name: fromName,
-    from: fromEmail
-  };
-
-  const mlHeaders = {
-    'Authorization': 'Bearer ' + mlKey,
-    'Content-Type': 'application/json',
-    'Accept': 'application/json'
+  const inputs = {
+    subject:       subject,
+    preheader:     document.getElementById('preheader').value.trim(),
+    image_url:     imageUrl,
+    body_copy:     document.getElementById('body-copy').value.trim(),
+    youtube_url:   document.getElementById('youtube-url').value.trim(),
+    blog_url:      document.getElementById('blog-url').value.trim(),
+    instagram_url: document.getElementById('instagram-url').value.trim(),
+    facebook_url:  document.getElementById('facebook-url').value.trim(),
+    linkedin_url:  document.getElementById('linkedin-url').value.trim(),
+    podcast_url:   document.getElementById('podcast-url').value.trim(),
   };
 
   try {
-    // ── Step 1: Create the campaign shell (no content) ──────────────────────
-    showStatus('send', 'Step 1 of 2 — Creating campaign in MailerLite…', 'info');
-    const createPayload = {
-      name: subject + ' — ' + today,
-      type: 'regular',
-      emails: [emailObj],
-      groups: [groupId]
-    };
-    console.log('MailerLite create payload:', JSON.stringify(createPayload, null, 2));
-
-    const createRes = await fetch('https://connect.mailerlite.com/api/campaigns', {
+    const res = await fetch(`https://api.github.com/repos/${ghRepo}/actions/workflows/create-campaign.yml/dispatches`, {
       method: 'POST',
-      headers: mlHeaders,
-      body: JSON.stringify(createPayload)
+      headers: {
+        'Authorization': `Bearer ${ghToken}`,
+        'Accept': 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ ref: 'main', inputs })
     });
-    const createData = await createRes.json();
-    console.log('MailerLite create response:', JSON.stringify(createData, null, 2));
-    if (!createRes.ok) throw new Error(createData.message || JSON.stringify(createData.errors || createData));
 
-    const campaignId = createData.data?.id;
-    const emailId    = createData.data?.emails?.[0]?.id;
-    if (!campaignId || !emailId) throw new Error('Could not read campaign ID or email ID from response.');
-
-    // ── Step 2: Update the campaign email with HTML content ─────────────────
-    showStatus('send', 'Step 2 of 2 — Uploading email content…', 'info');
-
-    const updatePayload = {
-      name: subject + ' — ' + today,
-      type: 'regular',
-      emails: [{
-        subject: subject,
-        from_name: fromName,
-        from: fromEmail,
-        content: html,
-        type: 'html',
-        ...(preheader ? { preheader_text: preheader } : {})
-      }],
-      groups: [groupId]
-    };
-
-    // Validate JSON round-trips cleanly before sending
-    let updateBody;
-    try {
-      updateBody = JSON.stringify(updatePayload);
-      JSON.parse(updateBody);
-      console.log('Update JSON valid, length:', updateBody.length);
-    } catch(jsonErr) {
-      throw new Error('JSON build error — ' + jsonErr.message);
+    if (res.status === 204) {
+      state.draftCreated = true;
+      setProgress('draft', 'done');
+      setNavDone('send');
+      hideStatus('send');
+      document.getElementById('campaign-id-display').textContent = 'Workflow triggered ✓';
+      document.getElementById('success-card').style.display = 'block';
+      document.getElementById('create-btn').style.display = 'none';
+    } else {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(`GitHub API ${res.status}: ${err.message || res.statusText}`);
     }
-
-    const updateRes = await fetch(`https://connect.mailerlite.com/api/campaigns/${campaignId}`, {
-      method: 'PUT',
-      headers: mlHeaders,
-      body: updateBody
-    });
-    const updateData = await updateRes.json();
-    console.log('MailerLite update response:', JSON.stringify(updateData, null, 2));
-    if (!updateRes.ok) throw new Error(updateData.message || JSON.stringify(updateData.errors || updateData));
-
-    const id = campaignId;
-    state.draftCreated = true;
-    setProgress('draft', 'done');
-    setNavDone('send');
-    hideStatus('send');
-
-    document.getElementById('campaign-id-display').textContent = 'Campaign #' + id;
-    document.getElementById('success-card').style.display = 'block';
-    document.getElementById('create-btn').style.display = 'none';
-
   } catch(e) {
     setProgress('draft', '');
-    showStatus('send', 'MailerLite error: ' + e.message, 'error');
+    showStatus('send', 'Error: ' + e.message, 'error');
   } finally {
     btn.disabled = false;
     btn.textContent = 'Create MailerLite draft';
