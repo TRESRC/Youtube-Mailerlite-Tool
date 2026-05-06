@@ -378,87 +378,43 @@ def create_campaign(html: str) -> str:
     resend_cfg = {
         "test_type":         "subject",
         "select_winner_by":  "c",
-        "b_value":           {"subject": src_subject},
+        "b_value":           {"subject": SUBJECT},
         "resend_delay":      24,
         "resend_delay_type": "hours",
     }
 
-    # Step 3 — Write modified content TO the source campaign
-    log("Writing modified content to source campaign...")
-    write_email = {
-        "subject":   src_subject,
-        "from_name": src_email.get("from_name", FROM_NAME),
-        "from":      src_email.get("from", FROM_EMAIL),
-        "content":   new_content,
-    }
-    write = requests.put(
-        f"https://connect.mailerlite.com/api/campaigns/{SOURCE_CAMPAIGN_ID}",
-        headers=headers,
-        json={
-            "name":            src_name,
-            "language_id":     src_data.get("language_id", 4),
-            "type":            src_type,
-            "emails":          [write_email],
-            "groups":          [MAILERLITE_GROUP_ID],
-            "resend_settings": resend_cfg,
-        },
-        timeout=30,
-    )
-    log(f"Write to source: {write.status_code} | {write.text[:200]}")
-
-    # Step 4 — Copy the (now modified) source
-    log("Copying modified source...")
+    # Step 3 — Copy the source to get a draft
+    log("Copying source to draft...")
     copy_r = requests.post(
         f"https://connect.mailerlite.com/api/campaigns/{SOURCE_CAMPAIGN_ID}/copy",
         headers=headers, timeout=30,
     )
     if not copy_r.ok:
         raise RuntimeError(f"Copy failed: {copy_r.status_code} {copy_r.text}")
-    campaign_id = copy_r.json()["data"]["id"]
-    log(f"Copied — new campaign: {campaign_id}")
+    copy_data   = copy_r.json()["data"]
+    campaign_id = copy_data["id"]
+    log(f"Copied — draft campaign: {campaign_id}")
 
-    # Step 5 — Restore source to original content immediately
-    log("Restoring source campaign...")
-    restore_email = {
-        "subject":   src_subject,
-        "from_name": src_email.get("from_name", FROM_NAME),
-        "from":      src_email.get("from", FROM_EMAIL),
-        "content":   src_content,
-    }
-    restore = requests.put(
-        f"https://connect.mailerlite.com/api/campaigns/{SOURCE_CAMPAIGN_ID}",
-        headers=headers,
-        json={
-            "name":            src_name,
-            "language_id":     src_data.get("language_id", 4),
-            "type":            src_type,
-            "emails":          [restore_email],
-            "groups":          [MAILERLITE_GROUP_ID],
-            "resend_settings": resend_cfg,
-        },
-        timeout=30,
-    )
-    log(f"Restore source: {restore.status_code}")
-
-    # Step 6 — Rename the copy with new subject and resend settings
-    email_meta = {"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL}
+    # Step 4 — Write modified content to the DRAFT copy
+    log("Writing modified content to draft...")
+    email_update = {"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL, "content": new_content}
     if PREHEADER:
-        email_meta["preheader_text"] = PREHEADER
-    rename_cfg = {**resend_cfg, "b_value": {"subject": SUBJECT}}
-    rename = requests.put(
+        email_update["preheader_text"] = PREHEADER
+
+    write = requests.put(
         f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
         headers=headers,
         json={
             "name":            safe_name,
             "language_id":     4,
             "type":            "resend",
-            "emails":          [email_meta],
+            "emails":          [email_update],
             "groups":          [MAILERLITE_GROUP_ID],
-            "resend_settings": rename_cfg,
+            "resend_settings": resend_cfg,
         },
         timeout=30,
     )
-    log(f"Rename: {rename.status_code} | {rename.text[:200]}")
+    log(f"Write to draft: {write.status_code} | {write.text[:300]}")
 
     log(f"✅ Draft ready — ID: {campaign_id}")
     return campaign_id
