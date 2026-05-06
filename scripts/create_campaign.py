@@ -329,17 +329,17 @@ def create_campaign(html: str) -> str:
         "Accept":        "application/json",
     }
 
-    # Step 1 — Create campaign shell with html editor type
+    # Step 1 — Create campaign shell
     log("Creating campaign shell...")
     create_body = {
         "name": f"{SUBJECT} — {today}",
         "type": "regular",
-        "emails": [{
+        "emails": [[{
             "subject":   SUBJECT,
             "from_name": FROM_NAME,
             "from":      FROM_EMAIL,
             "type":      "html",
-        }],
+        }]],
         "groups": [MAILERLITE_GROUP_ID],
     }
     r = requests.post(
@@ -376,7 +376,7 @@ def create_campaign(html: str) -> str:
         json={
             "name":   f"{SUBJECT} — {today}",
             "type":   "regular",
-            "emails": [email_obj],
+            "emails": [[email_obj]],
             "groups": [MAILERLITE_GROUP_ID],
         },
         timeout=30,
