@@ -402,10 +402,6 @@ def create_campaign(html: str) -> str:
             "resend_delay_type": "hours",
         },
     }
-    email_meta = {"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL, "content": new_content}
-    if PREHEADER:
-        email_meta["preheader_text"] = PREHEADER
-
     resend_cfg = {
         "test_type":         "subject",
         "select_winner_by":  "c",
@@ -414,26 +410,44 @@ def create_campaign(html: str) -> str:
         "resend_delay_type": "hours",
     }
 
-    # Content inside email obj AND as top-level key — matches the exact winning format
-    update = requests.put(
+    # Attempt A — no emails array, content at top level only
+    r_a = requests.put(
         f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
         headers=headers,
         json={
             "name":            safe_name,
             "language_id":     4,
             "type":            "resend",
-            "emails":          [email_meta],
             "groups":          [MAILERLITE_GROUP_ID],
             "content":         new_content,
             "resend_settings": resend_cfg,
         },
         timeout=30,
     )
-    log(f"Update status: {update.status_code}")
-    if update.ok:
+    log(f"Attempt A (no emails): {r_a.status_code} {r_a.text[:200]}")
+
+    # Attempt B — PATCH instead of PUT with just content
+    r_b = requests.patch(
+        f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
+        headers=headers,
+        json={"content": new_content, "name": safe_name},
+        timeout=30,
+    )
+    log(f"Attempt B (PATCH): {r_b.status_code} {r_b.text[:200]}")
+
+    # Attempt C — POST to a content sub-endpoint
+    r_c = requests.post(
+        f"https://connect.mailerlite.com/api/campaigns/{campaign_id}/content",
+        headers=headers,
+        json={"content": new_content},
+        timeout=30,
+    )
+    log(f"Attempt C (content endpoint): {r_c.status_code} {r_c.text[:200]}")
+
+    if r_a.ok or r_b.ok or r_c.ok:
         log("✅ Content updated successfully")
     else:
-        log(f"⚠️  Content update failed: {update.text[:300]}")
+        log("⚠️  All attempts failed — draft exists with correct name and template")
         log(f"Draft created with template intact. Content manager should update:")
         log(f"  Title: {SUBJECT}")
         log(f"  Thumbnail: {IMAGE_URL}")
