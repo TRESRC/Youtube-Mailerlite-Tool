@@ -350,8 +350,11 @@ def create_campaign(html: str) -> str:
     campaign_id = data["id"]
     log(f"Campaign created: {campaign_id}")
 
-    # Step 2 — Update with HTML content + preheader
+    # Step 2 — Update with HTML content via the email endpoint directly
     log("Uploading email content...")
+    email_id = data["emails"][0]["id"]
+    log(f"Email ID: {email_id}")
+
     email_obj = {
         "subject":   SUBJECT,
         "from_name": FROM_NAME,
@@ -362,14 +365,9 @@ def create_campaign(html: str) -> str:
         email_obj["preheader_text"] = PREHEADER
 
     update = requests.put(
-        f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
+        f"https://connect.mailerlite.com/api/campaigns/{campaign_id}/emails/{email_id}",
         headers=headers,
-        json={
-            "name": f"{SUBJECT} — {today}",
-            "type": "regular",
-            "emails": [email_obj],
-            "groups": [MAILERLITE_GROUP_ID],
-        },
+        json=email_obj,
         timeout=30,
     )
 
