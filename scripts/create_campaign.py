@@ -402,51 +402,36 @@ def create_campaign(html: str) -> str:
             "resend_delay_type": "hours",
         },
     }
-    # Try multiple PUT formats to crack the emails.0 array requirement
-    resend_cfg = {
-        "test_type":         "subject",
-        "select_winner_by":  "c",
-        "b_value":           {"subject": SUBJECT},
-        "resend_delay":      24,
-        "resend_delay_type": "hours",
-    }
-    base = {
-        "name":            safe_name,
-        "language_id":     4,
-        "type":            "resend",
-        "groups":          [MAILERLITE_GROUP_ID],
-        "resend_settings": resend_cfg,
-    }
+    email_meta = {"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL}
+    if PREHEADER:
+        email_meta["preheader_text"] = PREHEADER
 
-    attempts = [
-        # Format 1: object in array (standard)
-        {**base, "emails": [email_obj]},
-        # Format 2: object in nested array
-        {**base, "emails": [[email_obj]]},
-        # Format 3: content as separate key outside emails
-        {**base, "emails": [{"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL}], "content": new_content},
-        # Format 4: no content in emails, just metadata
-        {**base, "emails": [{"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL, "type": "builder"}]},
-    ]
-
-    success = False
-    for i, payload in enumerate(attempts):
-        test = requests.put(
-            f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
-            headers=headers,
-            json=payload,
-            timeout=30,
-        )
-        log(f"Format {i+1} status: {test.status_code}")
-        if test.ok:
-            log(f"✅ Format {i+1} WORKED!")
-            success = True
-            break
-        else:
-            log(f"Format {i+1} error: {test.text[:200]}")
-
-    if not success:
-        log("⚠️  All formats failed — draft exists with correct name, template intact")
+    # MailerLite requires content as a top-level key, not inside emails array
+    update = requests.put(
+        f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
+        headers=headers,
+        json={
+            "name":        safe_name,
+            "language_id": 4,
+            "type":        "resend",
+            "emails":      [email_meta],
+            "groups":      [MAILERLITE_GROUP_ID],
+            "content":     new_content,
+            "resend_settings": {
+                "test_type":         "subject",
+                "select_winner_by":  "c",
+                "b_value":           {"subject": SUBJECT},
+                "resend_delay":      24,
+                "resend_delay_type": "hours",
+            },
+        },
+        timeout=30,
+    )
+    log(f"Update status: {update.status_code}")
+    if update.ok:
+        log("✅ Content updated successfully")
+    else:
+        log(f"⚠️  Content update failed: {update.text[:300]}")
         log(f"Draft created with template intact. Content manager should update:")
         log(f"  Title: {SUBJECT}")
         log(f"  Thumbnail: {IMAGE_URL}")
