@@ -330,18 +330,23 @@ def create_campaign(html: str) -> str:
     }
 
     # Step 1 — Create campaign shell
+    # MailerLite expects emails as array of arrays: [[{email_obj}]]
+    # where emails[0] is itself an array containing the email object
     log("Creating campaign shell...")
+    safe_name = f"{SUBJECT} - {today}"  # use simple dash to avoid encoding issues
+    log(f"Campaign name: {safe_name}")
+    email_shell = {
+        "subject":   SUBJECT,
+        "from_name": FROM_NAME,
+        "from":      FROM_EMAIL,
+    }
     create_body = {
-        "name": f"{SUBJECT} — {today}",
-        "type": "regular",
-        "emails": [[{
-            "subject":   SUBJECT,
-            "from_name": FROM_NAME,
-            "from":      FROM_EMAIL,
-            "type":      "html",
-        }]],
+        "name":   safe_name,
+        "type":   "regular",
+        "emails": [email_shell],
         "groups": [MAILERLITE_GROUP_ID],
     }
+    log(f"Create payload: {json.dumps(create_body)}")
     r = requests.post(
         "https://connect.mailerlite.com/api/campaigns",
         headers=headers,
@@ -374,7 +379,7 @@ def create_campaign(html: str) -> str:
         f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
         headers=headers,
         json={
-            "name":   f"{SUBJECT} — {today}",
+            "name":   safe_name,
             "type":   "regular",
             "emails": [[email_obj]],
             "groups": [MAILERLITE_GROUP_ID],
