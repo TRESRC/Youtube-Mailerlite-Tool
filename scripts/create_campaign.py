@@ -402,7 +402,7 @@ def create_campaign(html: str) -> str:
             "resend_delay_type": "hours",
         },
     }
-    email_meta = {"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL}
+    email_meta = {"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL, "content": new_content}
     if PREHEADER:
         email_meta["preheader_text"] = PREHEADER
 
@@ -413,29 +413,20 @@ def create_campaign(html: str) -> str:
         "resend_delay":      24,
         "resend_delay_type": "hours",
     }
-    base = {
-        "name":            safe_name,
-        "language_id":     4,
-        "type":            "resend",
-        "groups":          [MAILERLITE_GROUP_ID],
-        "resend_settings": resend_cfg,
-    }
 
-    # Warmup calls — prior failed attempts seem to prime the API for Format 3
-    for warmup in [
-        {**base, "emails": [email_obj]},
-        {**base, "emails": [[email_obj]]},
-    ]:
-        requests.put(
-            f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
-            headers=headers, json=warmup, timeout=30,
-        )
-
-    # The winning format — content as top-level key
+    # Content inside email obj AND as top-level key — matches the exact winning format
     update = requests.put(
         f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
         headers=headers,
-        json={**base, "emails": [email_meta], "content": new_content},
+        json={
+            "name":            safe_name,
+            "language_id":     4,
+            "type":            "resend",
+            "emails":          [email_meta],
+            "groups":          [MAILERLITE_GROUP_ID],
+            "content":         new_content,
+            "resend_settings": resend_cfg,
+        },
         timeout=30,
     )
     log(f"Update status: {update.status_code}")
