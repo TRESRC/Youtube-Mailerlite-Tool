@@ -11,9 +11,10 @@ import requests
 from datetime import datetime, timezone
 
 # ── Config from secrets ───────────────────────────────────────────────────────
-MAILERLITE_API_KEY = os.environ["MAILERLITE_API_KEY"]
-FROM_NAME          = "TheREsource.tv"
-FROM_EMAIL         = "theguys@theresource.tv"
+MAILERLITE_API_KEY  = os.environ["MAILERLITE_API_KEY"]
+MAILERLITE_GROUP_ID = os.environ["MAILERLITE_GROUP_ID"]
+FROM_NAME           = "TheREsource.tv"
+FROM_EMAIL          = "theguys@theresource.tv"
 
 # ── Content from workflow inputs (passed by the web tool) ─────────────────────
 SUBJECT     = os.environ["INPUT_SUBJECT"]
@@ -330,18 +331,21 @@ def create_campaign(html: str) -> str:
 
     # Step 1 — Create campaign shell
     log("Creating campaign shell...")
+    create_body = {
+        "name": f"{SUBJECT} — {today}",
+        "type": "regular",
+        "emails": [{"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL}],
+        "groups": [MAILERLITE_GROUP_ID],
+    }
     r = requests.post(
         "https://connect.mailerlite.com/api/campaigns",
         headers=headers,
-        json={
-            "name": f"{SUBJECT} — {today}",
-            "type": "regular",
-            "emails": [{"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL}],
-            "filter": [[{"operator": "all", "args": ["all"]}]],
-        },
+        json=create_body,
         timeout=30,
     )
-    r.raise_for_status()
+    if not r.ok:
+        log(f"Create error {r.status_code}: {r.text}")
+        r.raise_for_status()
     data = r.json()["data"]
     campaign_id = data["id"]
     log(f"Campaign created: {campaign_id}")
@@ -364,7 +368,7 @@ def create_campaign(html: str) -> str:
             "name": f"{SUBJECT} — {today}",
             "type": "regular",
             "emails": [email_obj],
-            "filter": [[{"operator": "all", "args": ["all"]}]],
+            "groups": [MAILERLITE_GROUP_ID],
         },
         timeout=30,
     )
