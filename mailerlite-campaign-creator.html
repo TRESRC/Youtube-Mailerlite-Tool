@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -948,7 +949,40 @@ async function createCampaign() {
   const subject  = document.getElementById('subject').value.trim();
   const preheader= document.getElementById('preheader').value.trim();
   const imageUrlField = document.getElementById('image-url');
-  const imageUrl = imageUrlField.dataset.processed || imageUrlField.value.trim();
+  const rawImageUrl   = imageUrlField.value.trim();
+  const processedDataUrl = imageUrlField.dataset.processed || '';
+
+  // Upload processed PNG to WordPress media if we have one and WP creds
+  let imageUrl = rawImageUrl;
+  if (processedDataUrl && processedDataUrl.startsWith('data:')) {
+    const wpUrl  = document.getElementById('wp-url').value.trim();
+    const wpUser = document.getElementById('wp-user').value.trim();
+    const wpPass = document.getElementById('wp-pass').value.trim();
+    if (wpUrl && wpUser && wpPass) {
+      try {
+        showStatus('send', 'Uploading processed thumbnail to WordPress…', 'info');
+        const blob = await (await fetch(processedDataUrl)).blob();
+        const filename = 'thumbnail-' + Date.now() + '.png';
+        const formData = new FormData();
+        formData.append('file', blob, filename);
+        formData.append('title', document.getElementById('subject').value.trim());
+        const uploadRes = await fetch(wpUrl.replace(/\/$/, '') + '/wp-json/wp/v2/media', {
+          method: 'POST',
+          headers: { 'Authorization': 'Basic ' + btoa(unescape(encodeURIComponent(wpUser + ':' + wpPass))) },
+          body: formData
+        });
+        if (uploadRes.ok) {
+          const media = await uploadRes.json();
+          imageUrl = media.source_url || rawImageUrl;
+          console.log('Thumbnail uploaded to WordPress:', imageUrl);
+        } else {
+          console.warn('WP media upload failed, falling back to YouTube URL');
+        }
+      } catch(e) {
+        console.warn('WP media upload error:', e.message, '— falling back to YouTube URL');
+      }
+    }
+  }
   const body     = document.getElementById('body-copy').value.trim();
 
   const links = {
