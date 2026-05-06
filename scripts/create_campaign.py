@@ -11,10 +11,9 @@ import requests
 from datetime import datetime, timezone
 
 # ── Config from secrets ───────────────────────────────────────────────────────
-MAILERLITE_API_KEY  = os.environ["MAILERLITE_API_KEY"]
-MAILERLITE_GROUP_ID = os.environ["MAILERLITE_GROUP_ID"]
-FROM_NAME           = os.environ["FROM_NAME"]
-FROM_EMAIL          = os.environ["FROM_EMAIL"]
+MAILERLITE_API_KEY = os.environ["MAILERLITE_API_KEY"]
+FROM_NAME          = "TheREsource.tv"
+FROM_EMAIL         = "theguys@theresource.tv"
 
 # ── Content from workflow inputs (passed by the web tool) ─────────────────────
 SUBJECT     = os.environ["INPUT_SUBJECT"]
@@ -338,7 +337,7 @@ def create_campaign(html: str) -> str:
             "name": f"{SUBJECT} — {today}",
             "type": "regular",
             "emails": [{"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL}],
-            "groups": [MAILERLITE_GROUP_ID],
+            "filter": [[{"operator": "all", "args": ["all"]}]],
         },
         timeout=30,
     )
@@ -347,16 +346,25 @@ def create_campaign(html: str) -> str:
     campaign_id = data["id"]
     log(f"Campaign created: {campaign_id}")
 
-    # Step 2 — Update with HTML content
+    # Step 2 — Update with HTML content + preheader
     log("Uploading email content...")
+    email_obj = {
+        "subject":   SUBJECT,
+        "from_name": FROM_NAME,
+        "from":      FROM_EMAIL,
+        "content":   html,
+    }
+    if PREHEADER:
+        email_obj["preheader_text"] = PREHEADER
+
     update = requests.put(
         f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
         headers=headers,
         json={
             "name": f"{SUBJECT} — {today}",
             "type": "regular",
-            "emails": [{"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL, "content": html}],
-            "groups": [MAILERLITE_GROUP_ID],
+            "emails": [email_obj],
+            "filter": [[{"operator": "all", "args": ["all"]}]],
         },
         timeout=30,
     )
