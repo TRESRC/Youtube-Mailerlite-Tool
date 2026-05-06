@@ -64,9 +64,6 @@ jobs:
       - name: Create MailerLite campaign
         env:
           MAILERLITE_API_KEY:  ${{ secrets.MAILERLITE_API_KEY }}
-          MAILERLITE_GROUP_ID: ${{ secrets.MAILERLITE_GROUP_ID }}
-          FROM_NAME:           ${{ secrets.FROM_NAME }}
-          FROM_EMAIL:          ${{ secrets.FROM_EMAIL }}
           INPUT_SUBJECT:       ${{ inputs.subject }}
           INPUT_PREHEADER:     ${{ inputs.preheader }}
           INPUT_IMAGE_URL:     ${{ inputs.image_url }}
