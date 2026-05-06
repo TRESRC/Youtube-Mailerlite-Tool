@@ -450,35 +450,6 @@ def create_campaign(html: str) -> str:
 
     log(f"✅ Draft ready — ID: {campaign_id}")
     return campaign_id
-
-        f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
-        headers=headers,
-        json={**base, "emails": [[email_with_content]]},
-        timeout=30,
-    )
-    log(f"Nested array status: {r_nested.status_code} | {r_nested.text[:200]}")
-
-    if r_prime.ok or r_top.ok or r_nested.ok:
-        log("✅ Content updated!")
-    else:
-        log("⚠️  All failed — checking if content was written anyway...")
-        # Fetch and check content length
-        check = requests.get(
-            f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
-            headers=headers, timeout=30,
-        )
-        if check.ok:
-            fetched_content = check.json()["data"]["emails"][0].get("content", "")
-            log(f"Fetched content length: {len(fetched_content)} (original was {len(old_content)})")
-        log(f"Draft created with template intact. Content manager should update:")
-        log(f"  Title: {SUBJECT}")
-        log(f"  Thumbnail: {IMAGE_URL}")
-        log(f"  Blog URL: {BLOG_URL}")
-        log(f"  YouTube URL: {YOUTUBE_URL}")
-
-    log(f"✅ Draft ready — ID: {campaign_id}")
-    return campaign_id
-
 def main():
     log("🚀 Campaign Creator starting")
     log(f"   Subject: {SUBJECT}")
