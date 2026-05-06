@@ -410,44 +410,59 @@ def create_campaign(html: str) -> str:
         "resend_delay_type": "hours",
     }
 
-    # Attempt A — no emails array, content at top level only
-    r_a = requests.put(
-        f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
-        headers=headers,
-        json={
-            "name":            safe_name,
-            "language_id":     4,
-            "type":            "resend",
-            "groups":          [MAILERLITE_GROUP_ID],
-            "content":         new_content,
-            "resend_settings": resend_cfg,
-        },
+    email_meta = {"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL}
+    if PREHEADER:
+        email_meta["preheader_text"] = PREHEADER
+
+    # Try MCP server update_campaign tool directly
+    mcp_payload = {
+        "jsonrpc": "2.0",
+        "id":      1,
+        "method":  "tools/call",
+        "params": {
+            "name": "update_campaign",
+            "arguments": {
+                "campaign_id": campaign_id,
+                "name":        safe_name,
+                "subject":     SUBJECT,
+                "from_name":   FROM_NAME,
+                "from":        FROM_EMAIL,
+                "content":     new_content,
+            }
+        }
+    }
+    mcp_headers = {
+        "Authorization": f"Bearer {MAILERLITE_API_KEY}",
+        "Content-Type":  "application/json",
+        "Accept":        "application/json",
+    }
+    r_mcp = requests.post(
+        "https://mcp.mailerlite.com/mcp",
+        headers=mcp_headers,
+        json=mcp_payload,
         timeout=30,
     )
-    log(f"Attempt A (no emails): {r_a.status_code} {r_a.text[:200]}")
+    log(f"MCP status: {r_mcp.status_code} | response: {r_mcp.text[:400]}")
 
-    # Attempt B — PATCH instead of PUT with just content
-    r_b = requests.patch(
-        f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
-        headers=headers,
-        json={"content": new_content, "name": safe_name},
-        timeout=30,
-    )
-    log(f"Attempt B (PATCH): {r_b.status_code} {r_b.text[:200]}")
-
-    # Attempt C — POST to a content sub-endpoint
-    r_c = requests.post(
-        f"https://connect.mailerlite.com/api/campaigns/{campaign_id}/content",
-        headers=headers,
-        json={"content": new_content},
-        timeout=30,
-    )
-    log(f"Attempt C (content endpoint): {r_c.status_code} {r_c.text[:200]}")
-
-    if r_a.ok or r_b.ok or r_c.ok:
-        log("✅ Content updated successfully")
+    if r_mcp.ok and "error" not in r_mcp.text.lower():
+        log("✅ MCP content update succeeded!")
     else:
-        log("⚠️  All attempts failed — draft exists with correct name and template")
+        # Final fallback — just rename with subject update, no content
+        log("⚠️  MCP failed — renaming only, template intact in draft")
+        rename = requests.put(
+            f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
+            headers=headers,
+            json={
+                "name":            safe_name,
+                "language_id":     4,
+                "type":            "resend",
+                "emails":          [email_meta],
+                "groups":          [MAILERLITE_GROUP_ID],
+                "resend_settings": resend_cfg,
+            },
+            timeout=30,
+        )
+        log(f"Rename status: {rename.status_code}")
         log(f"Draft created with template intact. Content manager should update:")
         log(f"  Title: {SUBJECT}")
         log(f"  Thumbnail: {IMAGE_URL}")
