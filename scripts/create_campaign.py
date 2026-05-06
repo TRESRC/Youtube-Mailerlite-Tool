@@ -329,24 +329,27 @@ def create_campaign(html: str) -> str:
         "Accept":        "application/json",
     }
 
-    # Step 1 — Create campaign shell
-    # MailerLite expects emails as array of arrays: [[{email_obj}]]
-    # where emails[0] is itself an array containing the email object
-    log("Creating campaign shell...")
-    safe_name = f"{SUBJECT} - {today}"  # use simple dash to avoid encoding issues
+    safe_name = f"{SUBJECT} - {today}"
     log(f"Campaign name: {safe_name}")
-    email_shell = {
+
+    # Pass content directly in the create call per MailerLite's official SDK example
+    email_obj = {
         "subject":   SUBJECT,
         "from_name": FROM_NAME,
         "from":      FROM_EMAIL,
+        "content":   html,
     }
+    if PREHEADER:
+        email_obj["preheader_text"] = PREHEADER
+
     create_body = {
         "name":   safe_name,
         "type":   "regular",
-        "emails": [email_shell],
+        "emails": [email_obj],
         "groups": [MAILERLITE_GROUP_ID],
     }
-    log(f"Create payload: {json.dumps(create_body)}")
+
+    log("Creating campaign...")
     r = requests.post(
         "https://connect.mailerlite.com/api/campaigns",
         headers=headers,
@@ -354,46 +357,12 @@ def create_campaign(html: str) -> str:
         timeout=30,
     )
     if not r.ok:
-        log(f"Create error {r.status_code}: {r.text}")
+        log(f"Create error {r.status_code}: {r.text[:500]}")
         r.raise_for_status()
+
     data = r.json()["data"]
     campaign_id = data["id"]
-    email_id    = data["emails"][0]["id"]
-    email_type  = data["emails"][0].get("type", "unknown")
-    log(f"Campaign created: {campaign_id}")
-    log(f"Email ID: {email_id} | type: {email_type}")
-
-    # Step 2 — Update with HTML content via campaign endpoint
-    log("Uploading email content...")
-    email_obj = {
-        "subject":   SUBJECT,
-        "from_name": FROM_NAME,
-        "from":      FROM_EMAIL,
-        "content":   html,
-        "type":      "html",
-    }
-    if PREHEADER:
-        email_obj["preheader_text"] = PREHEADER
-
-    update = requests.put(
-        f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
-        headers=headers,
-        json={
-            "name":   safe_name,
-            "type":   "regular",
-            "emails": [[email_obj]],
-            "groups": [MAILERLITE_GROUP_ID],
-        },
-        timeout=30,
-    )
-    log(f"Update status: {update.status_code}")
-    log(f"Update response: {update.text[:500]}")
-
-    if not update.ok:
-        log(f"⚠️  Content upload failed but campaign shell exists: {campaign_id}")
-        raise RuntimeError(f"Content update failed: {update.status_code} {update.text}")
-
-    log(f"✅ Campaign ready — ID: {campaign_id}")
+    log(f"✅ Campaign created — ID: {campaign_id}")
     return campaign_id
 
 def main():
