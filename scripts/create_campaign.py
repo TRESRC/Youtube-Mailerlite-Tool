@@ -330,7 +330,7 @@ def create_campaign(html: str) -> str:
         "Accept":        "application/json",
     }
 
-    SOURCE_CAMPAIGN_ID = "186558527880300307"
+    SOURCE_CAMPAIGN_ID = "121893054089004143"
 
     # Step 1 — Copy the last sent campaign
     log(f"Copying campaign {SOURCE_CAMPAIGN_ID}...")
@@ -402,67 +402,28 @@ def create_campaign(html: str) -> str:
             "resend_delay_type": "hours",
         },
     }
-    resend_cfg = {
-        "test_type":         "subject",
-        "select_winner_by":  "c",
-        "b_value":           {"subject": SUBJECT},
-        "resend_delay":      24,
-        "resend_delay_type": "hours",
-    }
-
     email_meta = {"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL}
     if PREHEADER:
         email_meta["preheader_text"] = PREHEADER
 
-    # Try MCP server update_campaign tool directly
-    mcp_payload = {
-        "jsonrpc": "2.0",
-        "id":      1,
-        "method":  "tools/call",
-        "params": {
-            "name": "update_campaign",
-            "arguments": {
-                "campaign_id": campaign_id,
-                "name":        safe_name,
-                "subject":     SUBJECT,
-                "from_name":   FROM_NAME,
-                "from":        FROM_EMAIL,
-                "content":     new_content,
-            }
-        }
-    }
-    mcp_headers = {
-        "Authorization": f"Bearer {MAILERLITE_API_KEY}",
-        "Content-Type":  "application/json",
-        "Accept":        "application/json",
-    }
-    r_mcp = requests.post(
-        "https://mcp.mailerlite.com/mcp",
-        headers=mcp_headers,
-        json=mcp_payload,
+    update = requests.put(
+        f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
+        headers=headers,
+        json={
+            "name":        safe_name,
+            "language_id": 4,
+            "type":        "regular",
+            "emails":      [email_meta],
+            "groups":      [MAILERLITE_GROUP_ID],
+            "content":     new_content,
+        },
         timeout=30,
     )
-    log(f"MCP status: {r_mcp.status_code} | response: {r_mcp.text[:400]}")
-
-    if r_mcp.ok and "error" not in r_mcp.text.lower():
-        log("✅ MCP content update succeeded!")
+    log(f"Update status: {update.status_code}")
+    if update.ok:
+        log("✅ Content updated successfully!")
     else:
-        # Final fallback — just rename with subject update, no content
-        log("⚠️  MCP failed — renaming only, template intact in draft")
-        rename = requests.put(
-            f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
-            headers=headers,
-            json={
-                "name":            safe_name,
-                "language_id":     4,
-                "type":            "resend",
-                "emails":          [email_meta],
-                "groups":          [MAILERLITE_GROUP_ID],
-                "resend_settings": resend_cfg,
-            },
-            timeout=30,
-        )
-        log(f"Rename status: {rename.status_code}")
+        log(f"⚠️  Update failed: {update.text[:400]}")
         log(f"Draft created with template intact. Content manager should update:")
         log(f"  Title: {SUBJECT}")
         log(f"  Thumbnail: {IMAGE_URL}")
