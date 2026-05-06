@@ -394,30 +394,43 @@ def create_campaign(html: str) -> str:
     log(f"Dashboard email PUT: {r_dash.status_code} | {r_dash.text[:200]}")
 
     # Step 5 — Rename with correct subject and resend settings
+    # Send a few attempts first — seems to prime the API
     email_meta = {"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL}
     if PREHEADER:
         email_meta["preheader_text"] = PREHEADER
 
-    r_rename = requests.put(
-        f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
-        headers=headers,
-        json={
-            "name":            safe_name,
-            "language_id":     4,
-            "type":            "resend",
-            "emails":          [email_meta],
-            "groups":          [MAILERLITE_GROUP_ID],
-            "resend_settings": {
-                "test_type":         "subject",
-                "select_winner_by":  "c",
-                "b_value":           {"subject": SUBJECT},
-                "resend_delay":      24,
-                "resend_delay_type": "hours",
-            },
-        },
-        timeout=30,
-    )
-    log(f"Rename: {r_rename.status_code} | {r_rename.text[:200]}")
+    resend_cfg = {
+        "test_type":         "subject",
+        "select_winner_by":  "c",
+        "b_value":           {"subject": SUBJECT},
+        "resend_delay":      24,
+        "resend_delay_type": "hours",
+    }
+    base = {
+        "name":            safe_name,
+        "language_id":     4,
+        "type":            "resend",
+        "groups":          [MAILERLITE_GROUP_ID],
+        "resend_settings": resend_cfg,
+    }
+
+    # Try all email formats — log each one
+    for i, emails_val in enumerate([
+        [email_meta],
+        [[email_meta]],
+        [{**email_meta, "content": new_content}],
+        [[{**email_meta, "content": new_content}]],
+    ]):
+        r = requests.put(
+            f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
+            headers=headers,
+            json={**base, "emails": emails_val},
+            timeout=30,
+        )
+        log(f"Format {i+1}: {r.status_code} | {r.text[:150]}")
+        if r.ok:
+            log(f"✅ Format {i+1} succeeded!")
+            break
 
     log(f"✅ Draft ready — ID: {campaign_id}")
     return campaign_id
