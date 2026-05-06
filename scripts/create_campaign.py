@@ -402,28 +402,69 @@ def create_campaign(html: str) -> str:
             "resend_delay_type": "hours",
         },
     }
-    email_meta = {"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL}
+    email_with_content = {
+        "subject":   SUBJECT,
+        "from_name": FROM_NAME,
+        "from":      FROM_EMAIL,
+        "content":   new_content,
+    }
+    if PREHEADER:
+        email_with_content["preheader_text"] = PREHEADER
+
+    email_meta = {
+        "subject":   SUBJECT,
+        "from_name": FROM_NAME,
+        "from":      FROM_EMAIL,
+    }
     if PREHEADER:
         email_meta["preheader_text"] = PREHEADER
 
-    update = requests.put(
+    base = {
+        "name":        safe_name,
+        "language_id": 4,
+        "type":        "regular",
+        "groups":      [MAILERLITE_GROUP_ID],
+    }
+
+    # Step A — Prime: send content inside emails (will 422 but may write content)
+    r_prime = requests.put(
         f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
         headers=headers,
-        json={
-            "name":        safe_name,
-            "language_id": 4,
-            "type":        "regular",
-            "emails":      [email_meta],
-            "groups":      [MAILERLITE_GROUP_ID],
-            "content":     new_content,
-        },
+        json={**base, "emails": [email_with_content]},
         timeout=30,
     )
-    log(f"Update status: {update.status_code}")
-    if update.ok:
-        log("✅ Content updated successfully!")
+    log(f"Prime status: {r_prime.status_code}")
+
+    # Step B — Follow up immediately with content at top level
+    r_top = requests.put(
+        f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
+        headers=headers,
+        json={**base, "emails": [email_meta], "content": new_content},
+        timeout=30,
+    )
+    log(f"Top-level content status: {r_top.status_code} | {r_top.text[:200]}")
+
+    # Step C — Then try nested array format
+    r_nested = requests.put(
+        f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
+        headers=headers,
+        json={**base, "emails": [[email_with_content]]},
+        timeout=30,
+    )
+    log(f"Nested array status: {r_nested.status_code} | {r_nested.text[:200]}")
+
+    if r_prime.ok or r_top.ok or r_nested.ok:
+        log("✅ Content updated!")
     else:
-        log(f"⚠️  Update failed: {update.text[:400]}")
+        log("⚠️  All failed — checking if content was written anyway...")
+        # Fetch and check content length
+        check = requests.get(
+            f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
+            headers=headers, timeout=30,
+        )
+        if check.ok:
+            fetched_content = check.json()["data"]["emails"][0].get("content", "")
+            log(f"Fetched content length: {len(fetched_content)} (original was {len(old_content)})")
         log(f"Draft created with template intact. Content manager should update:")
         log(f"  Title: {SUBJECT}")
         log(f"  Thumbnail: {IMAGE_URL}")
