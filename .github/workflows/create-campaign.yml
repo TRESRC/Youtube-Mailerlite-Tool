@@ -1,0 +1,80 @@
+name: Create MailerLite Campaign
+
+on:
+  workflow_dispatch:
+    inputs:
+      subject:
+        description: "Email subject / video title"
+        required: true
+        type: string
+      preheader:
+        description: "Preheader text"
+        required: false
+        type: string
+      image_url:
+        description: "Thumbnail image URL (WordPress hosted)"
+        required: false
+        type: string
+      body_copy:
+        description: "Email body copy"
+        required: false
+        type: string
+      youtube_url:
+        description: "YouTube video URL"
+        required: false
+        type: string
+      blog_url:
+        description: "WordPress blog post URL"
+        required: false
+        type: string
+      instagram_url:
+        description: "Instagram URL"
+        required: false
+        type: string
+      facebook_url:
+        description: "Facebook URL"
+        required: false
+        type: string
+      linkedin_url:
+        description: "LinkedIn URL"
+        required: false
+        type: string
+      podcast_url:
+        description: "Podcast URL"
+        required: false
+        type: string
+
+jobs:
+  create-campaign:
+    name: Create MailerLite Draft Campaign
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Create MailerLite campaign
+        env:
+          MAILERLITE_API_KEY:  ${{ secrets.MAILERLITE_API_KEY }}
+          MAILERLITE_GROUP_ID: ${{ secrets.MAILERLITE_GROUP_ID }}
+          FROM_NAME:           ${{ secrets.FROM_NAME }}
+          FROM_EMAIL:          ${{ secrets.FROM_EMAIL }}
+          INPUT_SUBJECT:       ${{ inputs.subject }}
+          INPUT_PREHEADER:     ${{ inputs.preheader }}
+          INPUT_IMAGE_URL:     ${{ inputs.image_url }}
+          INPUT_BODY_COPY:     ${{ inputs.body_copy }}
+          INPUT_YOUTUBE_URL:   ${{ inputs.youtube_url }}
+          INPUT_BLOG_URL:      ${{ inputs.blog_url }}
+          INPUT_INSTAGRAM_URL: ${{ inputs.instagram_url }}
+          INPUT_FACEBOOK_URL:  ${{ inputs.facebook_url }}
+          INPUT_LINKEDIN_URL:  ${{ inputs.linkedin_url }}
+          INPUT_PODCAST_URL:   ${{ inputs.podcast_url }}
+        run: python scripts/create_campaign.py
