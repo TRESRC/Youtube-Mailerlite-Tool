@@ -340,40 +340,14 @@ def create_campaign(html: str) -> str:
         timeout=30,
     )
     log(f"Copy status: {r.status_code}")
-    log(f"Copy response: {r.text[:500]}")
-
     if not r.ok:
         raise RuntimeError(f"Copy failed: {r.status_code} {r.text}")
 
     data = r.json()["data"]
     campaign_id = data["id"]
-    log(f"Copied to draft campaign ID: {campaign_id}")
-
-    # Step 2 — Update just the name and subject on the copy
-    email_update = {
-        "subject":   SUBJECT,
-        "from_name": FROM_NAME,
-        "from":      FROM_EMAIL,
-    }
-    if PREHEADER:
-        email_update["preheader_text"] = PREHEADER
-
-    update = requests.put(
-        f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
-        headers=headers,
-        json={
-            "name":   safe_name,
-            "type":   "regular",
-            "emails": [email_update],
-            "groups": [MAILERLITE_GROUP_ID],
-        },
-        timeout=30,
-    )
-    log(f"Update status: {update.status_code}")
-    log(f"Update response: {update.text[:300]}")
-
-    if not update.ok:
-        log(f"⚠️  Name update failed but draft exists: {campaign_id}")
+    email_id    = data["emails"][0]["id"]
+    log(f"Copied to draft — campaign: {campaign_id} email: {email_id}")
+    log(f"Full copy response: {json.dumps(data, indent=2)[:3000]}")
 
     log(f"✅ Draft ready — ID: {campaign_id}")
     return campaign_id
