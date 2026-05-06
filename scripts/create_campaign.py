@@ -329,12 +329,17 @@ def create_campaign(html: str) -> str:
         "Accept":        "application/json",
     }
 
-    # Step 1 — Create campaign shell
+    # Step 1 — Create campaign shell with html editor type
     log("Creating campaign shell...")
     create_body = {
         "name": f"{SUBJECT} — {today}",
         "type": "regular",
-        "emails": [{"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL}],
+        "emails": [{
+            "subject":   SUBJECT,
+            "from_name": FROM_NAME,
+            "from":      FROM_EMAIL,
+            "type":      "html",
+        }],
         "groups": [MAILERLITE_GROUP_ID],
     }
     r = requests.post(
@@ -348,32 +353,38 @@ def create_campaign(html: str) -> str:
         r.raise_for_status()
     data = r.json()["data"]
     campaign_id = data["id"]
+    email_id    = data["emails"][0]["id"]
+    email_type  = data["emails"][0].get("type", "unknown")
     log(f"Campaign created: {campaign_id}")
+    log(f"Email ID: {email_id} | type: {email_type}")
 
-    # Step 2 — Update with HTML content via the email endpoint directly
+    # Step 2 — Update with HTML content via campaign endpoint
     log("Uploading email content...")
-    email_id = data["emails"][0]["id"]
-    log(f"Email ID: {email_id}")
-
     email_obj = {
         "subject":   SUBJECT,
         "from_name": FROM_NAME,
         "from":      FROM_EMAIL,
         "content":   html,
+        "type":      "html",
     }
     if PREHEADER:
         email_obj["preheader_text"] = PREHEADER
 
     update = requests.put(
-        f"https://connect.mailerlite.com/api/campaigns/{campaign_id}/emails/{email_id}",
+        f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
         headers=headers,
-        json=email_obj,
+        json={
+            "name":   f"{SUBJECT} — {today}",
+            "type":   "regular",
+            "emails": [email_obj],
+            "groups": [MAILERLITE_GROUP_ID],
+        },
         timeout=30,
     )
+    log(f"Update status: {update.status_code}")
+    log(f"Update response: {update.text[:500]}")
 
     if not update.ok:
-        log(f"Update response: {update.text}")
-        # If update fails, campaign shell still exists — report it
         log(f"⚠️  Content upload failed but campaign shell exists: {campaign_id}")
         raise RuntimeError(f"Content update failed: {update.status_code} {update.text}")
 
