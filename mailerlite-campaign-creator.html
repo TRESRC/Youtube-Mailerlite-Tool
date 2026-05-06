@@ -319,17 +319,14 @@
         <img src="img-resourcelogo-v5.png" alt="The RE Source" style="width:200px;height:200px;object-fit:contain;display:block;margin-bottom:12px;" />
         <div>
           <div class="logo-text">Email Automation</div>
-          <div class="logo-sub">YouTube → MailerLite</div>
+          <div class="logo-sub">YouTube → WordPress → MailerLite</div>
         </div>
       </div>
     </div>
 
     <nav class="nav-group">
       <div class="nav-label">Steps</div>
-      <div class="nav-item active" id="nav-config" onclick="showPage('config')">
-        <div class="dot"></div> Configuration
-      </div>
-      <div class="nav-item" id="nav-content" onclick="showPage('content')">
+      <div class="nav-item active" id="nav-content" onclick="showPage('content')">
         <div class="dot"></div> Content
       </div>
       <div class="nav-item" id="nav-links" onclick="showPage('links')">
@@ -351,6 +348,12 @@
     </div>
 
     <div class="sidebar-footer">
+      <div class="nav-item" id="nav-about" onclick="showPage('about')" style="margin-bottom:6px;">
+        About
+      </div>
+      <div class="nav-item" id="nav-config" onclick="showPage('config')" style="margin-bottom:10px;">
+        Configuration
+      </div>
       <div class="version">v2.0.0</div>
     </div>
   </aside>
@@ -359,7 +362,7 @@
   <main class="main">
 
     <!-- PAGE: Config -->
-    <div class="page active" id="page-config">
+    <div class="page" id="page-config">
       <div class="page-header">
         <div class="page-title">Configuration</div>
         <div class="page-desc">All API keys live in GitHub Secrets. You just need a Personal Access Token so this tool can trigger the workflow on your behalf.</div>
@@ -417,7 +420,7 @@
     </div>
 
     <!-- PAGE: Content -->
-    <div class="page" id="page-content">
+    <div class="page active" id="page-content">
       <div class="page-header">
         <div class="page-title">Content</div>
         <div class="page-desc">Fetch this week's video from YouTube and the matching WordPress post, then review and edit before sending.</div>
@@ -587,6 +590,58 @@
       </div>
     </div>
 
+    <!-- PAGE: About -->
+    <div class="page" id="page-about">
+      <div class="page-header">
+        <div class="page-title">About</div>
+        <div class="page-desc">How this tool works and what's running behind the scenes.</div>
+      </div>
+
+      <div class="section-title">What this tool does</div>
+      <div style="font-size:13px;color:var(--text2);line-height:1.8;margin-bottom:1.5rem;">
+        This tool automates the weekly email campaign workflow for The RE Source — from a new YouTube upload to a fully built MailerLite draft — in about 3 minutes.
+      </div>
+
+      <div style="background:var(--surface);border:1px solid var(--border2);border-radius:10px;padding:20px;margin-bottom:1.5rem;">
+        <div style="display:flex;flex-direction:column;gap:14px;">
+          <div style="display:flex;gap:14px;align-items:flex-start;">
+            <div style="width:28px;height:28px;border-radius:50%;background:rgba(203,0,0,0.15);color:#cb0000;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;flex-shrink:0;">1</div>
+            <div><div style="font-size:13px;font-weight:500;color:var(--text);margin-bottom:3px;">Fetch</div><div style="font-size:12px;color:var(--text2);">Pulls the latest YouTube video title, thumbnail, description, and URL. Also fetches the matching WordPress post URL from the <code style="font-family:var(--font-mono);font-size:11px;background:var(--surface2);padding:1px 5px;border-radius:3px;">videos</code> custom post type.</div></div>
+          </div>
+          <div style="display:flex;gap:14px;align-items:flex-start;">
+            <div style="width:28px;height:28px;border-radius:50%;background:rgba(203,0,0,0.15);color:#cb0000;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;flex-shrink:0;">2</div>
+            <div><div style="font-size:13px;font-weight:500;color:var(--text);margin-bottom:3px;">Process thumbnail</div><div style="font-size:12px;color:var(--text2);">Applies the play button overlay and cuts the bottom corners into the chevron shape — entirely in the browser using the Canvas API. The processed PNG is uploaded to WordPress media automatically.</div></div>
+          </div>
+          <div style="display:flex;gap:14px;align-items:flex-start;">
+            <div style="width:28px;height:28px;border-radius:50%;background:rgba(203,0,0,0.15);color:#cb0000;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;flex-shrink:0;">3</div>
+            <div><div style="font-size:13px;font-weight:500;color:var(--text);margin-bottom:3px;">Review &amp; edit</div><div style="font-size:12px;color:var(--text2);">Edit the subject line, preheader, body copy, and social links. Instagram, Facebook, LinkedIn, and Podcast are pre-filled with The RE Source channel URLs each week.</div></div>
+          </div>
+          <div style="display:flex;gap:14px;align-items:flex-start;">
+            <div style="width:28px;height:28px;border-radius:50%;background:rgba(203,0,0,0.15);color:#cb0000;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;flex-shrink:0;">4</div>
+            <div><div style="font-size:13px;font-weight:500;color:var(--text);margin-bottom:3px;">Create draft</div><div style="font-size:12px;color:var(--text2);">Triggers a GitHub Actions workflow that builds the full HTML email server-side and creates a draft in MailerLite — fully built and ready to review and send.</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-title">Architecture</div>
+      <div style="background:var(--surface);border:1px solid var(--border2);border-radius:10px;padding:20px;margin-bottom:1.5rem;font-size:12px;color:var(--text2);line-height:1.8;">
+        <div style="margin-bottom:10px;"><span style="color:var(--text);font-weight:500;">This tool (GitHub Pages)</span> — runs in the browser. Handles fetching, thumbnail processing, and triggering the workflow. No API keys stored in the code.</div>
+        <div style="margin-bottom:10px;"><span style="color:var(--text);font-weight:500;">GitHub Actions</span> — two workflows run in the cloud. One checks YouTube hourly for new videos. The other is triggered by this tool and creates the MailerLite campaign server-side using GitHub Secrets.</div>
+        <div><span style="color:var(--text);font-weight:500;">GitHub Secrets</span> — all sensitive credentials (YouTube API key, WordPress app password, MailerLite API key) live here. Never exposed to the browser.</div>
+      </div>
+
+      <div class="section-title">Repository</div>
+      <div style="font-size:13px;color:var(--text2);line-height:1.8;margin-bottom:1.5rem;">
+        <a href="https://github.com/tresrc/Youtube-Mailerlite-Tool" target="_blank" style="color:#cb0000;text-decoration:none;">github.com/tresrc/Youtube-Mailerlite-Tool</a><br>
+        Full documentation, file structure, and setup guide in the <code style="font-family:var(--font-mono);font-size:11px;background:var(--surface2);padding:1px 5px;border-radius:3px;">README.md</code>.
+      </div>
+
+      <div class="section-title">Weekly workflow</div>
+      <div style="background:var(--surface);border:1px solid var(--border2);border-radius:10px;padding:16px 20px;font-size:12px;color:var(--text2);line-height:2;font-family:var(--font-mono);">
+        Open tool → Fetch → Edit copy → Check links → Create draft → Review in MailerLite → Send
+      </div>
+    </div>
+
   </main>
 </div>
 
@@ -622,7 +677,7 @@ function clearConfig() {
 }
 
 // ── Navigation ────────────────────────────────────────────────────────────────
-const pages = ['config','content','links','send'];
+const pages = ['config','content','links','send','about'];
 
 function showPage(p) {
   pages.forEach(id => {
@@ -1065,6 +1120,10 @@ restoreSocialDefaults();
 if (playBtnDataUrl) {
   showStatus('content', 'Play button loaded from last session — ready to apply to thumbnails.', 'success');
   setTimeout(() => hideStatus('content'), 3000);
+}
+// Nudge to config if GitHub token not yet saved
+if (!localStorage.getItem('cc_gh-token') || !localStorage.getItem('cc_gh-repo')) {
+  showStatus('content', 'First time? Go to Configuration (bottom left) to enter your GitHub token and repo.', 'warn');
 }
 </script>
 </body>
