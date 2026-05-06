@@ -323,14 +323,13 @@ img{{border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;}
 
 def create_campaign(html: str) -> str:
     import re
-    today    = datetime.now(timezone.utc).strftime("%b %d, %Y")
+    today     = datetime.now(timezone.utc).strftime("%b %d, %Y")
     safe_name = f"{SUBJECT} - {today}"
-    headers  = {
+    headers   = {
         "Authorization": f"Bearer {MAILERLITE_API_KEY}",
         "Content-Type":  "application/json",
         "Accept":        "application/json",
     }
-
     SOURCE_CAMPAIGN_ID = "186558527880300307"
 
     # Step 1 — Fetch source campaign content
@@ -344,11 +343,9 @@ def create_campaign(html: str) -> str:
     src_email   = src_data["emails"][0]
     src_content = src_email.get("content", "")
     src_subject = src_email.get("subject", "")
-    src_name    = src_data["name"]
-    src_type    = src_data["type"]
-    log(f"Source: type={src_type}, content length={len(src_content)}")
+    log(f"Source content length: {len(src_content)}")
 
-    # Step 2 — Build modified content via find-and-replace
+    # Step 2 — Find-and-replace dynamic content
     new_content = src_content
     new_content = new_content.replace(src_subject, SUBJECT)
 
@@ -375,15 +372,7 @@ def create_campaign(html: str) -> str:
 
     log(f"New content length: {len(new_content)}")
 
-    resend_cfg = {
-        "test_type":         "subject",
-        "select_winner_by":  "c",
-        "b_value":           {"subject": SUBJECT},
-        "resend_delay":      24,
-        "resend_delay_type": "hours",
-    }
-
-    # Step 3 — Copy the source to get a draft
+    # Step 3 — Copy source to draft
     log("Copying source to draft...")
     copy_r = requests.post(
         f"https://connect.mailerlite.com/api/campaigns/{SOURCE_CAMPAIGN_ID}/copy",
@@ -391,46 +380,48 @@ def create_campaign(html: str) -> str:
     )
     if not copy_r.ok:
         raise RuntimeError(f"Copy failed: {copy_r.status_code} {copy_r.text}")
-    copy_data   = copy_r.json()["data"]
-    campaign_id = copy_data["id"]
-    log(f"Copied — draft campaign: {campaign_id}")
+    campaign_id = copy_r.json()["data"]["id"]
+    email_id    = copy_r.json()["data"]["emails"][0]["id"]
+    log(f"Copied — campaign: {campaign_id} email: {email_id}")
 
+    # Step 4 — Try dashboard internal API to update email content
+    r_dash = requests.put(
+        f"https://dashboard.mailerlite.com/api/emails/{email_id}",
+        headers={**headers, "X-Requested-With": "XMLHttpRequest"},
+        json={"content": new_content, "subject": SUBJECT},
+        timeout=30,
+    )
+    log(f"Dashboard email PUT: {r_dash.status_code} | {r_dash.text[:200]}")
+
+    # Step 5 — Rename with correct subject and resend settings
     email_meta = {"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL}
     if PREHEADER:
         email_meta["preheader_text"] = PREHEADER
 
-    # First change type to regular (remove resend complexity)
-    type_change = requests.put(
+    r_rename = requests.put(
         f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
         headers=headers,
         json={
-            "name":        safe_name,
-            "language_id": 4,
-            "type":        "regular",
-            "emails":      [email_meta],
-            "groups":      [MAILERLITE_GROUP_ID],
+            "name":            safe_name,
+            "language_id":     4,
+            "type":            "resend",
+            "emails":          [email_meta],
+            "groups":          [MAILERLITE_GROUP_ID],
+            "resend_settings": {
+                "test_type":         "subject",
+                "select_winner_by":  "c",
+                "b_value":           {"subject": SUBJECT},
+                "resend_delay":      24,
+                "resend_delay_type": "hours",
+            },
         },
         timeout=30,
     )
-    log(f"Type change: {type_change.status_code} | {type_change.text[:200]}")
-
-    # Then update content as regular campaign
-    content_write = requests.put(
-        f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
-        headers=headers,
-        json={
-            "name":        safe_name,
-            "language_id": 4,
-            "type":        "regular",
-            "emails":      [{**email_meta, "content": new_content}],
-            "groups":      [MAILERLITE_GROUP_ID],
-        },
-        timeout=30,
-    )
-    log(f"Content write: {content_write.status_code} | {content_write.text[:300]}")
+    log(f"Rename: {r_rename.status_code} | {r_rename.text[:200]}")
 
     log(f"✅ Draft ready — ID: {campaign_id}")
     return campaign_id
+
 def main():
     log("🚀 Campaign Creator starting")
     log(f"   Subject: {SUBJECT}")
