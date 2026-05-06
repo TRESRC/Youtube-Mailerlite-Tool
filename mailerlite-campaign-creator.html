@@ -1384,14 +1384,16 @@ ${preheaderHtml}
     // ── Step 2: Update the campaign email with HTML content ─────────────────
     showStatus('send', 'Step 2 of 2 — Uploading email content…', 'info');
     const updatePayload = {
+      name: subject + ' — ' + today,
+      type: 'regular',
       emails: [{
-        id: emailId,
         subject: subject,
         from_name: fromName,
         from: fromEmail,
         content: html,
         ...(preheader ? { preheader_text: preheader } : {})
-      }]
+      }],
+      groups: [groupId]
     };
     console.log('MailerLite update payload emails[0].content length:', html.length);
 
