@@ -390,11 +390,17 @@ def create_campaign(html: str) -> str:
     # Mirror the exact structure MailerLite returned — no guessing
     put_body = {
         "name":            safe_name,
-        "language_id":     data.get("language_id", 4),
+        "language_id":     4,
         "type":            "resend",
         "emails":          [email_obj],
         "groups":          [MAILERLITE_GROUP_ID],
-        "resend_settings": resend_cfg,
+        "resend_settings": {
+            "test_type":         "subject",
+            "select_winner_by":  "c",
+            "b_value":           {"subject": SUBJECT},
+            "resend_delay":      24,
+            "resend_delay_type": "hours",
+        },
     }
     log(f"PUT body (no content): {json.dumps({**put_body, 'emails': [{'subject': email_obj['subject'], 'content': '[TRUNCATED]'}]})}")
 
@@ -409,15 +415,30 @@ def create_campaign(html: str) -> str:
     if update.ok:
         log("✅ Full content update succeeded!")
     else:
-        # Step 5 — Fall back: rename only, content manager updates in builder
+        # Step 5 — Fall back: rename with resend_settings but no content
         log("⚠️  Content PUT failed — falling back to rename only")
         rename = requests.put(
             f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
             headers=headers,
-            json={"name": safe_name},
+            json={
+                "name":        safe_name,
+                "language_id": 4,
+                "type":        "resend",
+                "emails":      [{"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL}],
+                "groups":      [MAILERLITE_GROUP_ID],
+                "resend_settings": {
+                    "test_type":         "subject",
+                    "select_winner_by":  "c",
+                    "b_value":           {"subject": SUBJECT},
+                    "resend_delay":      24,
+                    "resend_delay_type": "hours",
+                },
+            },
             timeout=30,
         )
         log(f"Rename status: {rename.status_code}")
+        if not rename.ok:
+            log(f"Rename response: {rename.text[:300]}")
         log(f"Draft created with template intact. Content manager should update:")
         log(f"  Title: {SUBJECT}")
         log(f"  Thumbnail: {IMAGE_URL}")
