@@ -42,22 +42,41 @@ async def run():
 
         # ── Step 1: Log in ──────────────────────────────────────────────────────
         log("Navigating to MailerLite login...")
-        await page.goto("https://dashboard.mailerlite.com/signin", wait_until="networkidle")
-        await page.wait_for_timeout(1000)
-
-        log("Filling credentials...")
-        await page.fill('input[type="email"]', ML_EMAIL)
-        await page.fill('input[type="password"]', ML_PASSWORD)
-        await page.click('button[type="submit"]')
-        await page.wait_for_load_state("networkidle")
+        await page.goto("https://dashboard.mailerlite.com/signin", wait_until="domcontentloaded")
         await page.wait_for_timeout(3000)
 
-        current_url = page.url
-        log(f"Post-login URL: {current_url}")
-        if "signin" in current_url:
-            log("ERROR: Still on signin page — check credentials")
-            await browser.close()
-            sys.exit(1)
+        # Screenshot for debugging
+        await page.screenshot(path="/tmp/login_page.png")
+        log(f"Login page URL: {page.url}")
+        log(f"Login page title: {await page.title()}")
+
+        # Check if already logged in
+        if "dashboard" in page.url and "signin" not in page.url:
+            log("Already logged in!")
+        else:
+            log("Filling credentials...")
+            # Wait for any email input
+            await page.wait_for_selector('input[type="email"], input[name="email"], input[id="email"]', timeout=15000)
+            email_input = page.locator('input[type="email"], input[name="email"], input[id="email"]').first
+            await email_input.fill(ML_EMAIL)
+
+            password_input = page.locator('input[type="password"], input[name="password"], input[id="password"]').first
+            await password_input.fill(ML_PASSWORD)
+
+            # Click submit
+            submit = page.locator('button[type="submit"], button:has-text("Log in"), button:has-text("Sign in")').first
+            await submit.click()
+            await page.wait_for_load_state("networkidle")
+            await page.wait_for_timeout(4000)
+
+            current_url = page.url
+            log(f"Post-login URL: {current_url}")
+            await page.screenshot(path="/tmp/post_login.png")
+
+            if "signin" in current_url or "login" in current_url:
+                log("ERROR: Still on signin page — check credentials or 2FA")
+                await browser.close()
+                sys.exit(1)
 
         # ── Step 2: Open the email builder ──────────────────────────────────────
         builder_url = f"https://dashboard.mailerlite.com/emails/{EMAIL_ID}/edit"
