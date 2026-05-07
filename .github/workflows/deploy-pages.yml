@@ -5,7 +5,7 @@ on:
     branches:
       - main
     paths:
-      - 'mailerlite-campaign-creator.html'
+      - 'index.html'
   workflow_dispatch:
 
 permissions:
@@ -26,9 +26,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Copy tool as index
-        run: cp mailerlite-campaign-creator.html index.html
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
