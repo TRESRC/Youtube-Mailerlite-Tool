@@ -99,3 +99,11 @@ jobs:
           INPUT_LINKEDIN_URL:  ${{ inputs.linkedin_url }}
           INPUT_PODCAST_URL:   ${{ inputs.podcast_url }}
         run: python scripts/update_campaign_browser.py
+
+      - name: Upload screenshots for debugging
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-screenshots
+          path: /tmp/*.png
+          if-no-files-found: ignore
