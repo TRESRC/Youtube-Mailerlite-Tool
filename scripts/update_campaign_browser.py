@@ -44,7 +44,7 @@ async def run():
             {
                 "name":   "sso_session_app",
                 "value":  os.environ["ML_SSO_SESSION_APP"],
-                "domain": ".mailerlite.com",
+                "domain": "dashboard.mailerlite.com",
                 "path":   "/",
                 "secure": True,
                 "httpOnly": True,
@@ -52,7 +52,7 @@ async def run():
             {
                 "name":   "sso_session_id",
                 "value":  os.environ["ML_SSO_SESSION_ID"],
-                "domain": ".mailerlite.com",
+                "domain": "dashboard.mailerlite.com",
                 "path":   "/",
                 "secure": True,
                 "httpOnly": True,
@@ -60,7 +60,7 @@ async def run():
             {
                 "name":   "sso_session_version",
                 "value":  os.environ["ML_SSO_SESSION_VERSION"],
-                "domain": ".mailerlite.com",
+                "domain": "dashboard.mailerlite.com",
                 "path":   "/",
                 "secure": True,
                 "httpOnly": True,
