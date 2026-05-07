@@ -383,7 +383,6 @@ def create_campaign(html: str) -> str:
     campaign_id = copy_r.json()["data"]["id"]
     email_id    = copy_r.json()["data"]["emails"][0]["id"]
     log(f"Copied — campaign: {campaign_id} email: {email_id}")
-
     # Step 4 — Try dashboard internal API to update email content
     r_dash = requests.put(
         f"https://dashboard.mailerlite.com/api/emails/{email_id}",
@@ -432,8 +431,8 @@ def create_campaign(html: str) -> str:
             log(f"✅ Format {i+1} succeeded!")
             break
 
-    log(f"✅ Draft ready — ID: {campaign_id}")
-    return campaign_id
+    log(f"✅ Draft ready — ID: {campaign_id} | Email ID: {email_id}")
+    return campaign_id, email_id
 
 def main():
     log("🚀 Campaign Creator starting")
@@ -442,7 +441,7 @@ def main():
     html = build_html()
     log(f"   HTML length: {len(html)} chars")
 
-    campaign_id = create_campaign(html)
+    campaign_id, email_id = create_campaign(html)
 
     # Write campaign ID to output for GitHub Actions summary
     with open(os.environ.get("GITHUB_STEP_SUMMARY", "/dev/null"), "a") as f:
@@ -450,6 +449,12 @@ def main():
         f.write(f"**Campaign ID:** {campaign_id}\n\n")
         f.write(f"**Subject:** {SUBJECT}\n\n")
         f.write(f"Go to [MailerLite Drafts](https://dashboard.mailerlite.com/campaigns/draft) to review and send.\n")
+
+    # Output IDs for next step (Playwright)
+    env_file = os.environ.get("GITHUB_ENV", "/dev/null")
+    with open(env_file, "a") as f:
+        f.write(f"CAMPAIGN_ID={campaign_id}\n")
+        f.write(f"EMAIL_ID={email_id}\n")
 
     print(f"::set-output name=campaign_id::{campaign_id}")
     log("Done.")
