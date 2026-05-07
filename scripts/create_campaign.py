@@ -383,17 +383,8 @@ def create_campaign(html: str) -> str:
     campaign_id = copy_r.json()["data"]["id"]
     email_id    = copy_r.json()["data"]["emails"][0]["id"]
     log(f"Copied — campaign: {campaign_id} email: {email_id}")
-    # Step 4 — Try dashboard internal API to update email content
-    r_dash = requests.put(
-        f"https://dashboard.mailerlite.com/api/emails/{email_id}",
-        headers={**headers, "X-Requested-With": "XMLHttpRequest"},
-        json={"content": new_content, "subject": SUBJECT},
-        timeout=30,
-    )
-    log(f"Dashboard email PUT: {r_dash.status_code} | {r_dash.text[:200]}")
 
-    # Step 5 — Rename with correct subject and resend settings
-    # Send a few attempts first — seems to prime the API
+    # Step 4 — Try every available endpoint to push modified content
     email_meta = {"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL}
     if PREHEADER:
         email_meta["preheader_text"] = PREHEADER
@@ -405,6 +396,48 @@ def create_campaign(html: str) -> str:
         "resend_delay":      24,
         "resend_delay_type": "hours",
     }
+
+    # Attempt A — groot internal endpoint (what the builder uses)
+    groot_headers = {
+        "Authorization":    f"Bearer {MAILERLITE_API_KEY}",
+        "Content-Type":     "application/json",
+        "Accept":           "application/json",
+        "X-Requested-With": "XMLHttpRequest",
+        "Origin":           "https://dashboard.mailerlite.com",
+        "Referer":          f"https://dashboard.mailerlite.com/emails/{email_id}/edit",
+    }
+    r_groot_get = requests.get(
+        f"https://dashboard.mailerlite.com/emails/{email_id}/groot",
+        headers=groot_headers, timeout=30,
+    )
+    log(f"Groot GET: {r_groot_get.status_code} | {r_groot_get.text[:150]}")
+
+    r_groot_post = requests.post(
+        "https://dashboard.mailerlite.com/groot-update-online-editors",
+        headers=groot_headers,
+        json={"content": new_content, "email_id": email_id},
+        timeout=30,
+    )
+    log(f"Groot POST: {r_groot_post.status_code} | {r_groot_post.text[:150]}")
+
+    # Attempt B — connect API with X-HTTP-Method-Override
+    r_override = requests.post(
+        f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
+        headers={**headers, "X-HTTP-Method-Override": "PUT"},
+        json={
+            "name":            safe_name,
+            "language_id":     4,
+            "type":            "resend",
+            "emails":          [email_meta],
+            "groups":          [MAILERLITE_GROUP_ID],
+            "resend_settings": resend_cfg,
+            "content":         new_content,
+        },
+        timeout=30,
+    )
+    log(f"Override PUT: {r_override.status_code} | {r_override.text[:150]}")
+
+    # Attempt C — standard formats
     base = {
         "name":            safe_name,
         "language_id":     4,
@@ -412,13 +445,9 @@ def create_campaign(html: str) -> str:
         "groups":          [MAILERLITE_GROUP_ID],
         "resend_settings": resend_cfg,
     }
-
-    # Try all email formats — log each one
     for i, emails_val in enumerate([
         [email_meta],
-        [[email_meta]],
         [{**email_meta, "content": new_content}],
-        [[{**email_meta, "content": new_content}]],
     ]):
         r = requests.put(
             f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
