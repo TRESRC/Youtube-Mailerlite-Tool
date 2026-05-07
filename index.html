@@ -595,7 +595,7 @@
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
               <div id="helper-thumb-url" style="font-size:11px;color:var(--text2);background:var(--surface2);border:1px solid var(--border2);border-radius:6px;padding:6px 10px;flex:1;word-break:break-all;min-width:0;">—</div>
               <button onclick="copyToClipboard('helper-thumb-url', this)" style="flex-shrink:0;font-size:11px;font-family:var(--font-mono);background:var(--surface2);border:1px solid var(--border2);border-radius:6px;color:var(--text2);cursor:pointer;padding:6px 12px;white-space:nowrap;">Copy URL</button>
-              <a id="helper-thumb-download" href="#" download style="flex-shrink:0;font-size:11px;font-family:var(--font-mono);background:var(--accent);border:1px solid var(--accent);border-radius:6px;color:#fff;cursor:pointer;padding:6px 12px;text-decoration:none;white-space:nowrap;">Download</a>
+              <button onclick="forceDownload(document.getElementById('helper-thumb-url').textContent.trim())" id="helper-thumb-download" style="flex-shrink:0;font-size:11px;font-family:var(--font-mono);background:var(--accent);border:1px solid var(--accent);border-radius:6px;color:#fff;cursor:pointer;padding:6px 12px;white-space:nowrap;">Download</button>
             </div>
           </div>
 
@@ -1139,6 +1139,21 @@ function restoreSocialDefaults() {
   });
 }
 
+function forceDownload(url) {
+  if (!url || url === '#') return;
+  fetch(url)
+    .then(r => r.blob())
+    .then(blob => {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      const ext = url.split('.').pop().split('?')[0] || 'png';
+      a.download = `thumbnail.${ext}`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    })
+    .catch(() => window.open(url, '_blank'));
+}
+
 function copyToClipboard(elementId, btn) {
   const el = document.getElementById(elementId);
   const text = el.textContent.trim();
@@ -1163,14 +1178,12 @@ function copyToClipboard(elementId, btn) {
 
 function populateHelperFields() {
   const imageUrl = document.getElementById('image-url')?.value?.trim() || '';
-  const bodyCopy = document.getElementById('body')?.value?.trim() || '';
+  const bodyCopy = document.getElementById('body-copy')?.value?.trim() || '';
   const ytUrl    = document.getElementById('youtube-url')?.value?.trim() || '';
   const blogUrl  = document.getElementById('blog-url')?.value?.trim() || '';
 
   const thumbEl = document.getElementById('helper-thumb-url');
-  const dlEl    = document.getElementById('helper-thumb-download');
   if (thumbEl) thumbEl.textContent = imageUrl || '(no thumbnail URL)';
-  if (dlEl) { dlEl.href = imageUrl || '#'; dlEl.style.display = imageUrl ? '' : 'none'; }
 
   const bodyEl = document.getElementById('helper-body');
   if (bodyEl) bodyEl.textContent = bodyCopy || '(no body copy entered)';
