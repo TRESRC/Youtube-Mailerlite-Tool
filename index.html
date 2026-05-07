@@ -1140,16 +1140,28 @@ function restoreSocialDefaults() {
 }
 
 function forceDownload(url) {
-  if (!url || url === '#') return;
-  fetch(url)
+  if (!url || url.includes('(no thumbnail')) return;
+  // First try: use the processed canvas data URL already in memory (no CORS issue)
+  const processedDataUrl = document.getElementById('image-url')?.dataset?.processed || '';
+  if (processedDataUrl && processedDataUrl.startsWith('data:')) {
+    const a = document.createElement('a');
+    a.href = processedDataUrl;
+    a.download = 'thumbnail.png';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => document.body.removeChild(a), 1000);
+    return;
+  }
+  // Fallback: try blob fetch (works if WordPress sends CORS headers)
+  fetch(url, { mode: 'cors' })
     .then(r => r.blob())
     .then(blob => {
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      const ext = url.split('.').pop().split('?')[0] || 'png';
-      a.download = `thumbnail.${ext}`;
+      a.download = 'thumbnail.png';
+      document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(a.href);
+      setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(a.href); }, 1000);
     })
     .catch(() => window.open(url, '_blank'));
 }
