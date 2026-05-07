@@ -11,8 +11,6 @@ import asyncio
 from datetime import datetime, timezone
 
 # ── Config ─────────────────────────────────────────────────────────────────────
-ML_EMAIL    = os.environ["MAILERLITE_EMAIL"]
-ML_PASSWORD = os.environ["MAILERLITE_PASSWORD"]
 CAMPAIGN_ID = os.environ["CAMPAIGN_ID"]
 EMAIL_ID    = os.environ["EMAIL_ID"]
 IMAGE_URL   = os.environ.get("INPUT_IMAGE_URL", "")
