@@ -1098,7 +1098,7 @@ async function createCampaign() {
       setNavDone('send');
       hideStatus('send');
       document.getElementById('campaign-id-display').textContent = 'Workflow triggered ✓';
-      populateHelperFields();
+      populateHelperFields(imageUrl);
       document.getElementById('success-card').style.display = 'block';
       document.getElementById('create-btn').style.display = 'none';
     } else {
@@ -1176,8 +1176,8 @@ function copyToClipboard(elementId, btn) {
   });
 }
 
-function populateHelperFields() {
-  const imageUrl = document.getElementById('image-url')?.value?.trim() || '';
+function populateHelperFields(wpImageUrl) {
+  const imageUrl = wpImageUrl || document.getElementById('image-url')?.value?.trim() || '';
   const bodyCopy = document.getElementById('body-copy')?.value?.trim() || '';
   const ytUrl    = document.getElementById('youtube-url')?.value?.trim() || '';
   const blogUrl  = document.getElementById('blog-url')?.value?.trim() || '';
