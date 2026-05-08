@@ -375,16 +375,23 @@ def create_campaign(html: str) -> str:
     # Step 3 — Create a fresh regular campaign with full content
     # (Resend type blocks content updates via API — MailerLite bug)
     # Content manager enables auto-resend manually in MailerLite (30 seconds)
-    log("Step 1 — Creating campaign shell (no content)...")
+    log("Step 1 — Creating resend campaign shell (no content)...")
     shell_r = requests.post(
         "https://connect.mailerlite.com/api/campaigns",
         headers=headers,
         data=json.dumps({
             "name":        safe_name,
             "language_id": 4,
-            "type":        "regular",
+            "type":        "resend",
             "emails":      [{"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL}],
             "groups":      [MAILERLITE_GROUP_ID],
+            "resend_settings": {
+                "test_type":         "subject",
+                "select_winner_by":  "c",
+                "b_value":           {"subject": SUBJECT},
+                "resend_delay":      24,
+                "resend_delay_type": "hours",
+            },
         }),
         timeout=30,
     )
@@ -426,9 +433,16 @@ def create_campaign(html: str) -> str:
         data=json.dumps({
             "name":        safe_name,
             "language_id": 4,
-            "type":        "regular",
+            "type":        "resend",
             "emails":      [email_obj],
             "groups":      [MAILERLITE_GROUP_ID],
+            "resend_settings": {
+                "test_type":         "subject",
+                "select_winner_by":  "c",
+                "b_value":           {"subject": SUBJECT},
+                "resend_delay":      24,
+                "resend_delay_type": "hours",
+            },
         }),
         timeout=30,
     )
