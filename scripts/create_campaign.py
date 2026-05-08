@@ -409,7 +409,7 @@ def create_campaign(html: str) -> str:
     email_id    = shell_r.json()["data"]["emails"][0]["id"]
     log(f"Shell created — campaign: {campaign_id} | email: {email_id}")
 
-    # Step 2 — PUT emails array with content (must be separate call after shell creation)
+    # Step 2 — PUT emails with content (retry up to 3 times — MailerLite API is inconsistent)
     log("Step 2 — Updating campaign with full content...")
     email_obj = {
         "subject":   SUBJECT,
@@ -420,24 +420,34 @@ def create_campaign(html: str) -> str:
     if PREHEADER:
         email_obj["preheader_text"] = PREHEADER
 
-    update_r = requests.put(
-        f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
-        headers=headers,
-        data=json.dumps({
-            "name":        safe_name,
-            "language_id": 4,
-            "type":        "regular",
-            "emails":      [email_obj],
-            "groups":      [MAILERLITE_GROUP_ID],
-        }),
-        timeout=30,
-    )
-    log(f"Content update: {update_r.status_code} | {update_r.text[:200]}")
+    update_payload = json.dumps({
+        "name":        safe_name,
+        "language_id": 4,
+        "type":        "regular",
+        "emails":      [email_obj],
+        "groups":      [MAILERLITE_GROUP_ID],
+    })
 
-    if update_r.ok:
-        log("✅ Full content updated successfully!")
-    else:
-        log("⚠️  Content update failed — draft shell exists, update manually")
+    update_r = None
+    for attempt in range(1, 4):
+        update_r = requests.put(
+            f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
+            headers=headers,
+            data=update_payload,
+            timeout=30,
+        )
+        log(f"Content update attempt {attempt}: {update_r.status_code} | {update_r.text[:150]}")
+        if update_r.ok:
+            log("✅ Full content updated successfully!")
+            break
+        import time; time.sleep(1)
+
+    if not update_r.ok:
+        log("⚠️  Content update failed after 3 attempts — draft shell exists, update manually")
+        log(f"   Thumbnail: {IMAGE_URL}")
+        log(f"   YouTube:   {YOUTUBE_URL}")
+        log(f"   Blog URL:  {BLOG_URL}")
+        log(f"   Body copy: {BODY_COPY[:80]}...")
 
     log(f"✅ Draft ready — ID: {campaign_id} | Email ID: {email_id}")
     return campaign_id, email_id
