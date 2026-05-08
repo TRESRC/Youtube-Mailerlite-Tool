@@ -384,21 +384,19 @@ def create_campaign(html: str) -> str:
     email_id    = copy_r.json()["data"]["emails"][0]["id"]
     log(f"Copied — campaign: {campaign_id} | email: {email_id}")
 
-    # Step 4 — Rename with correct subject and resend settings
-    # NOTE: Content update via API is blocked by MailerLite (emails.0 must be array bug).
-    # Support ticket submitted. Once resolved, new_content above is ready to push.
-    email_meta = {"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL}
+    # Step 4 — Update draft with content using nested array format per MailerLite PHP SDK
+    email_obj = {"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL, "content": new_content}
     if PREHEADER:
-        email_meta["preheader_text"] = PREHEADER
+        email_obj["preheader_text"] = PREHEADER
 
-    rename = requests.put(
+    update = requests.put(
         f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
         headers=headers,
         json={
             "name":            safe_name,
             "language_id":     4,
             "type":            "resend",
-            "emails":          [email_meta],
+            "emails":          [[email_obj]],
             "groups":          [MAILERLITE_GROUP_ID],
             "resend_settings": {
                 "test_type":         "subject",
@@ -410,20 +408,17 @@ def create_campaign(html: str) -> str:
         },
         timeout=30,
     )
-    log(f"Rename: {rename.status_code}")
-    if not rename.ok:
-        log(f"Rename response: {rename.text[:200]}")
+    log(f"Update: {update.status_code} | {update.text[:300]}")
 
-    # Log what still needs manual updating in MailerLite
-    log(f"📋 Open draft in MailerLite and update:")
-    log(f"   Thumbnail: {IMAGE_URL}")
-    log(f"   YouTube:   {YOUTUBE_URL}")
-    log(f"   Blog URL:  {BLOG_URL}")
-    log(f"   Body copy: {BODY_COPY[:80]}...")
-
-    log(f"✅ Draft ready — ID: {campaign_id} | Email ID: {email_id}")
-    return campaign_id, email_id
-
+    if update.ok:
+        log("✅ Content updated successfully!")
+    else:
+        log("⚠️  Content update failed — draft exists with correct name")
+        log(f"📋 Open draft in MailerLite and update manually:")
+        log(f"   Thumbnail: {IMAGE_URL}")
+        log(f"   YouTube:   {YOUTUBE_URL}")
+        log(f"   Blog URL:  {BLOG_URL}")
+        log(f"   Body copy: {BODY_COPY[:80]}...")
 
     log(f"✅ Draft ready — ID: {campaign_id} | Email ID: {email_id}")
     return campaign_id, email_id
