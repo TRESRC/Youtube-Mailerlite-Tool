@@ -385,16 +385,19 @@ def create_campaign(html: str) -> str:
     if PREHEADER:
         email_obj["preheader_text"] = PREHEADER
 
+    payload = {
+        "name":        safe_name,
+        "language_id": 4,
+        "type":        "regular",
+        "emails":      [email_obj],
+        "groups":      [MAILERLITE_GROUP_ID],
+    }
+    log(f"Payload keys: {list(payload.keys())}, emails type: {type(payload['emails'])}, emails[0] type: {type(payload['emails'][0])}")
+
     create_r = requests.post(
         "https://connect.mailerlite.com/api/campaigns",
         headers=headers,
-        json={
-            "name":        safe_name,
-            "language_id": 4,
-            "type":        "regular",
-            "emails":      [email_obj],
-            "groups":      [MAILERLITE_GROUP_ID],
-        },
+        data=json.dumps(payload),  # Use data= like the official SDK, not json=
         timeout=30,
     )
     log(f"Create: {create_r.status_code} | {create_r.text[:300]}")
