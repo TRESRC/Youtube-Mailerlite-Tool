@@ -330,7 +330,7 @@ def create_campaign(html: str) -> str:
         "Content-Type":  "application/json",
         "Accept":        "application/json",
     }
-    SOURCE_CAMPAIGN_ID = "186558527880300307"
+    SOURCE_CAMPAIGN_ID = "186652362153133094"
 
     # Step 1 — Fetch source campaign content
     log("Fetching source campaign...")
