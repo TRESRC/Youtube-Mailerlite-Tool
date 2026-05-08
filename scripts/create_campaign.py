@@ -375,41 +375,79 @@ def create_campaign(html: str) -> str:
     # Step 3 — Create a fresh regular campaign with full content
     # (Resend type blocks content updates via API — MailerLite bug)
     # Content manager enables auto-resend manually in MailerLite (30 seconds)
-    log("Creating regular campaign with content...")
-    email_obj = {
-        "subject":   SUBJECT,
-        "from_name": FROM_NAME,
-        "from":      FROM_EMAIL,
-        "content":   new_content,
-    }
-    if PREHEADER:
-        email_obj["preheader_text"] = PREHEADER
-
-    payload = {
-        "name":        safe_name,
-        "language_id": 4,
-        "type":        "regular",
-        "emails":      [email_obj],
-        "groups":      [MAILERLITE_GROUP_ID],
-    }
-    log(f"Payload keys: {list(payload.keys())}, emails type: {type(payload['emails'])}, emails[0] type: {type(payload['emails'][0])}")
-
-    create_r = requests.post(
+    log("Step 1 — Creating campaign shell (no content)...")
+    shell_r = requests.post(
         "https://connect.mailerlite.com/api/campaigns",
         headers=headers,
-        data=json.dumps(payload),  # Use data= like the official SDK, not json=
+        data=json.dumps({
+            "name":        safe_name,
+            "language_id": 4,
+            "type":        "regular",
+            "emails":      [{"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL}],
+            "groups":      [MAILERLITE_GROUP_ID],
+        }),
         timeout=30,
     )
-    log(f"Create: {create_r.status_code} | {create_r.text[:300]}")
+    log(f"Shell create: {shell_r.status_code} | {shell_r.text[:200]}")
 
-    if create_r.ok:
-        campaign_id = create_r.json()["data"]["id"]
-        email_id    = create_r.json()["data"]["emails"][0]["id"]
-        log(f"✅ Campaign created with content — ID: {campaign_id}")
-        log(f"⚠️  Remember to enable Auto-resend in MailerLite Settings tab")
+    if not shell_r.ok:
+        log("Shell create failed — falling back to copy...")
+        copy_r = requests.post(
+            f"https://connect.mailerlite.com/api/campaigns/{SOURCE_CAMPAIGN_ID}/copy",
+            headers=headers, timeout=30,
+        )
+        if not copy_r.ok:
+            raise RuntimeError(f"Copy failed: {copy_r.status_code} {copy_r.text}")
+        campaign_id = copy_r.json()["data"]["id"]
+        email_id    = copy_r.json()["data"]["emails"][0]["id"]
+        log(f"Copied — campaign: {campaign_id} | email: {email_id}")
+        log(f"📋 Update manually: Thumbnail, YouTube URL, Blog URL, Body copy")
+        log(f"✅ Draft ready — ID: {campaign_id} | Email ID: {email_id}")
+        return campaign_id, email_id
+
+    campaign_id = shell_r.json()["data"]["id"]
+    email_id    = shell_r.json()["data"]["emails"][0]["id"]
+    log(f"Shell created — campaign: {campaign_id} | email: {email_id}")
+
+    # Step 2 — PUT only the content, nothing else
+    log("Step 2 — Sending content only...")
+    content_r = requests.put(
+        f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
+        headers=headers,
+        data=json.dumps({"content": new_content}),
+        timeout=30,
+    )
+    log(f"Content only PUT: {content_r.status_code} | {content_r.text[:200]}")
+
+    # Step 3 — PUT only the emails array with content
+    log("Step 3 — Sending emails array with content...")
+    emails_r = requests.put(
+        f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
+        headers=headers,
+        data=json.dumps({
+            "emails": [{"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL, "content": new_content}],
+        }),
+        timeout=30,
+    )
+    log(f"Emails with content PUT: {emails_r.status_code} | {emails_r.text[:200]}")
+
+    # Step 4 — PUT preheader separately
+    if PREHEADER:
+        log("Step 4 — Sending preheader...")
+        pre_r = requests.put(
+            f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
+            headers=headers,
+            data=json.dumps({
+                "emails": [{"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL, "preheader_text": PREHEADER}],
+            }),
+            timeout=30,
+        )
+        log(f"Preheader PUT: {pre_r.status_code} | {pre_r.text[:200]}")
+
+    if content_r.ok or emails_r.ok:
+        log("✅ Content update succeeded!")
     else:
-        # Fallback — copy resend campaign without content
-        log("Regular create failed — falling back to copy...")
+        log("⚠️  Content updates failed — falling back to copy...")
         copy_r = requests.post(
             f"https://connect.mailerlite.com/api/campaigns/{SOURCE_CAMPAIGN_ID}/copy",
             headers=headers, timeout=30,
