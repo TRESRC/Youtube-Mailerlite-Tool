@@ -370,21 +370,41 @@ def create_campaign(html: str) -> str:
             new_content = new_content[:body_match.start(2)] + new_body + new_content[body_match.end(2):]
             log("Replaced body text")
 
+    # Replace preheader in HTML content
+    if PREHEADER:
+        # Hidden preheader div (white text for email clients)
+        pre_match = re.search(r'(font-size:1px;color:#f6f8f9;"[^>]*>)([^<]*)(</)', new_content)
+        if pre_match:
+            new_content = new_content[:pre_match.start(2)] + PREHEADER + new_content[pre_match.end(2):]
+            log(f"Replaced hidden preheader div")
+        # Visible preheader cell
+        pre_td = re.search(r'(color:#111111;font-size:12px;line-height:18px;">)([^<]*)(</td>)', new_content)
+        if pre_td:
+            new_content = new_content[:pre_td.start(2)] + PREHEADER + new_content[pre_td.end(2):]
+            log(f"Replaced visible preheader cell")
+
     log(f"New content length: {len(new_content)} (original: {len(src_content)})")
 
-    # Step 3 — Create a fresh regular campaign with full content
-    # (Resend type blocks content updates via API — MailerLite bug)
-    # Content manager enables auto-resend manually in MailerLite (30 seconds)
-    log("Step 1 — Creating campaign shell (no content)...")
+    resend_cfg = {
+        "test_type":         "subject",
+        "select_winner_by":  "c",
+        "b_value":           {"subject": SUBJECT},
+        "resend_delay":      24,
+        "resend_delay_type": "hours",
+    }
+
+    # Step 3 — Create resend shell (no content)
+    log("Step 1 — Creating resend campaign shell...")
     shell_r = requests.post(
         "https://connect.mailerlite.com/api/campaigns",
         headers=headers,
         data=json.dumps({
-            "name":        safe_name,
-            "language_id": 4,
-            "type":        "regular",
-            "emails":      [{"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL}],
-            "groups":      [MAILERLITE_GROUP_ID],
+            "name":            safe_name,
+            "language_id":     4,
+            "type":            "resend",
+            "emails":          [{"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL}],
+            "groups":          [MAILERLITE_GROUP_ID],
+            "resend_settings": resend_cfg,
         }),
         timeout=30,
     )
@@ -409,7 +429,7 @@ def create_campaign(html: str) -> str:
     email_id    = shell_r.json()["data"]["emails"][0]["id"]
     log(f"Shell created — campaign: {campaign_id} | email: {email_id}")
 
-    # Step 2 — PUT emails with content (retry up to 3 times — MailerLite API is inconsistent)
+    # Step 2 — PUT emails with content (try resend first, fall back to regular)
     log("Step 2 — Updating campaign with full content...")
     email_obj = {
         "subject":   SUBJECT,
@@ -420,25 +440,31 @@ def create_campaign(html: str) -> str:
     if PREHEADER:
         email_obj["preheader_text"] = PREHEADER
 
-    update_payload = json.dumps({
-        "name":        safe_name,
-        "language_id": 4,
-        "type":        "regular",
-        "emails":      [email_obj],
-        "groups":      [MAILERLITE_GROUP_ID],
-    })
-
     update_r = None
     for attempt in range(1, 4):
-        update_r = requests.put(
-            f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
-            headers=headers,
-            data=update_payload,
-            timeout=30,
-        )
-        log(f"Content update attempt {attempt}: {update_r.status_code} | {update_r.text[:150]}")
-        if update_r.ok:
-            log("✅ Full content updated successfully!")
+        # Try resend type first (preserves auto-resend), fall back to regular
+        for campaign_type, extra in [
+            ("resend", {"resend_settings": resend_cfg}),
+            ("regular", {}),
+        ]:
+            update_r = requests.put(
+                f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
+                headers=headers,
+                data=json.dumps({
+                    "name":        safe_name,
+                    "language_id": 4,
+                    "type":        campaign_type,
+                    "emails":      [email_obj],
+                    "groups":      [MAILERLITE_GROUP_ID],
+                    **extra,
+                }),
+                timeout=30,
+            )
+            log(f"Content update ({campaign_type}) attempt {attempt}: {update_r.status_code} | {update_r.text[:150]}")
+            if update_r.ok:
+                log(f"✅ Full content updated as {campaign_type}!")
+                break
+        if update_r and update_r.ok:
             break
         import time; time.sleep(1)
 
