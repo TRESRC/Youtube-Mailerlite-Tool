@@ -897,18 +897,24 @@ function updateSummary() {
 
 // ── Fetch YouTube ─────────────────────────────────────────────────────────────
 async function fetchYouTube(key, channel) {
-  const searchUrl = `https://www.googleapis.com/youtube/v3/search?key=${encodeURIComponent(key)}&channelId=${encodeURIComponent(channel)}&part=snippet&order=date&type=video&maxResults=1`;
-  const searchRes = await fetch(searchUrl);
-  const searchData = await searchRes.json();
-  if (searchData.error) throw new Error('YouTube API: ' + searchData.error.message);
-  if (!searchData.items?.length) throw new Error('No videos found on this channel.');
-  const item = searchData.items[0];
-  const videoId = item.id.videoId;
+  // Step 1 — Get the channel's uploads playlist ID
+  const chanUrl = `https://www.googleapis.com/youtube/v3/channels?key=${encodeURIComponent(key)}&id=${encodeURIComponent(channel)}&part=contentDetails`;
+  const chanRes = await fetch(chanUrl);
+  const chanData = await chanRes.json();
+  if (chanData.error) throw new Error('YouTube API: ' + chanData.error.message);
+  const uploadsPlaylistId = chanData.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
+  if (!uploadsPlaylistId) throw new Error('Could not find uploads playlist for this channel.');
 
-  const videoUrl = `https://www.googleapis.com/youtube/v3/videos?key=${encodeURIComponent(key)}&id=${videoId}&part=snippet`;
-  const videoRes = await fetch(videoUrl);
-  const videoData = await videoRes.json();
-  const s = videoData.items?.[0]?.snippet || item.snippet;
+  // Step 2 — Get the latest video from the uploads playlist
+  const playlistUrl = `https://www.googleapis.com/youtube/v3/playlistItems?key=${encodeURIComponent(key)}&playlistId=${encodeURIComponent(uploadsPlaylistId)}&part=snippet&maxResults=1`;
+  const playlistRes = await fetch(playlistUrl);
+  const playlistData = await playlistRes.json();
+  if (playlistData.error) throw new Error('YouTube API: ' + playlistData.error.message);
+  if (!playlistData.items?.length) throw new Error('No videos found on this channel.');
+
+  const item = playlistData.items[0];
+  const videoId = item.snippet.resourceId.videoId;
+  const s = item.snippet;
 
   const thumb =
     s.thumbnails.maxres?.url ||
