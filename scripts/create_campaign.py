@@ -370,19 +370,6 @@ def create_campaign(html: str) -> str:
             new_content = new_content[:body_match.start(2)] + new_body + new_content[body_match.end(2):]
             log("Replaced body text")
 
-    # Replace preheader in HTML content
-    if PREHEADER:
-        # Hidden preheader div (white text for email clients)
-        pre_match = re.search(r'(font-size:1px;color:#f6f8f9;"[^>]*>)([^<]*)(</)', new_content)
-        if pre_match:
-            new_content = new_content[:pre_match.start(2)] + PREHEADER + new_content[pre_match.end(2):]
-            log(f"Replaced hidden preheader div")
-        # Visible preheader cell
-        pre_td = re.search(r'(color:#111111;font-size:12px;line-height:18px;">)([^<]*)(</td>)', new_content)
-        if pre_td:
-            new_content = new_content[:pre_td.start(2)] + PREHEADER + new_content[pre_td.end(2):]
-            log(f"Replaced visible preheader cell")
-
     log(f"New content length: {len(new_content)} (original: {len(src_content)})")
 
     resend_cfg = {
