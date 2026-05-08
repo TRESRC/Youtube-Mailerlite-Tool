@@ -322,7 +322,7 @@ img{{border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;}
 </html>"""
 
 def create_campaign(html: str) -> str:
-    import re
+    import re, time
     today     = datetime.now(timezone.utc).strftime("%b %d, %Y")
     safe_name = f"{SUBJECT} - {today}"
     headers   = {
@@ -332,7 +332,7 @@ def create_campaign(html: str) -> str:
     }
     SOURCE_CAMPAIGN_ID = "186652362153133094"
 
-    # Step 1 — Fetch source campaign content
+    # Step 1 — Fetch source campaign content for find-and-replace
     log("Fetching source campaign...")
     src_r = requests.get(
         f"https://connect.mailerlite.com/api/campaigns/{SOURCE_CAMPAIGN_ID}",
@@ -345,7 +345,7 @@ def create_campaign(html: str) -> str:
     src_subject = src_email.get("subject", "")
     log(f"Source content length: {len(src_content)}")
 
-    # Step 2 — Find-and-replace dynamic content in memory
+    # Step 2 — Find-and-replace dynamic content
     new_content = src_content
     new_content = new_content.replace(src_subject, SUBJECT)
 
@@ -368,30 +368,21 @@ def create_campaign(html: str) -> str:
         if body_match:
             old_body_len = len(body_match.group(2))
             new_body_html = ''.join(f'<p style="margin-top: 0px; margin-bottom: 10px; line-height: 150%;">{p}</p>' for p in BODY_COPY.split('\n') if p.strip())
-            # Pad new body to match original length to avoid MailerLite size validation
             padding_needed = old_body_len - len(new_body_html)
             if padding_needed > 0:
                 new_body_html += '<!-- ' + ' ' * padding_needed + '-->'
             new_content = new_content[:body_match.start(2)] + new_body_html + new_content[body_match.end(2):]
-            log(f"Replaced body text (old: {old_body_len} chars, new: {len(new_body_html)} chars)")
+            log(f"Replaced body text (old: {old_body_len}, new: {len(new_body_html)})")
 
     log(f"New content length: {len(new_content)} (original: {len(src_content)})")
 
-    resend_cfg = {
-        "test_type":         "subject",
-        "select_winner_by":  "c",
-        "b_value":           {"subject": SUBJECT},
-        "resend_delay":      24,
-        "resend_delay_type": "hours",
-    }
-
-    # Step 3 — Create regular shell (regular type accepts content updates)
-    log("Step 1 — Creating regular campaign shell...")
+    # Step 3 — Create regular campaign shell (no content)
+    log("Creating campaign shell...")
     shell_r = requests.post(
         "https://connect.mailerlite.com/api/campaigns",
         headers=headers,
         data=json.dumps({
-            "name":        safe_name + " [TEMP]",
+            "name":        safe_name,
             "language_id": 4,
             "type":        "regular",
             "emails":      [{"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL}],
@@ -399,133 +390,56 @@ def create_campaign(html: str) -> str:
         }),
         timeout=30,
     )
-    log(f"Shell create: {shell_r.status_code}")
     if not shell_r.ok:
-        raise RuntimeError(f"Shell create failed: {shell_r.status_code} {shell_r.text}")
+        raise RuntimeError(f"Shell failed: {shell_r.status_code} {shell_r.text}")
 
-    regular_id = shell_r.json()["data"]["id"]
-    email_id   = shell_r.json()["data"]["emails"][0]["id"]
-    log(f"Regular shell — ID: {regular_id}")
+    campaign_id = shell_r.json()["data"]["id"]
+    email_id    = shell_r.json()["data"]["emails"][0]["id"]
+    log(f"Shell created — ID: {campaign_id}")
 
-    # Wait for campaign to initialize on MailerLite's servers
-    import time
-    time.sleep(3)
-
-    # Step 2 — Push content to regular campaign
-    log("Step 2 — Pushing full content to regular campaign...")
-    email_obj = {
-        "subject":   SUBJECT,
-        "from_name": FROM_NAME,
-        "from":      FROM_EMAIL,
-        "content":   new_content,
-    }
+    # Step 4 — Immediately push content (no sleep — matches the one successful run)
+    email_obj = {"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL, "content": new_content}
     if PREHEADER:
         email_obj["preheader_text"] = PREHEADER
 
-    base_put = {
-        "name":        safe_name + " [TEMP]",
+    update_payload = json.dumps({
+        "name":        safe_name,
         "language_id": 4,
         "type":        "regular",
+        "emails":      [email_obj],
         "groups":      [MAILERLITE_GROUP_ID],
-    }
+    })
 
     update_r = None
-    # Try modified content 3x, then try original source content 2x
-    attempts = (
-        [(new_content, "modified")] * 3 +
-        [(src_content, "original")]  * 2
-    )
-    for attempt, (content_to_use, label) in enumerate(attempts, 1):
-        test_obj = {**email_obj, "content": content_to_use}
+    for attempt in range(1, 6):
         update_r = requests.put(
-            f"https://connect.mailerlite.com/api/campaigns/{regular_id}",
+            f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
             headers=headers,
-            data=json.dumps({**base_put, "emails": [test_obj]}),
+            data=update_payload,
             timeout=30,
         )
-        log(f"Attempt {attempt} ({label}): {update_r.status_code} | {update_r.text[:200]}")
+        log(f"Content update attempt {attempt}: {update_r.status_code} | {update_r.text[:150]}")
         if update_r.ok:
-            log(f"✅ Content pushed ({label})!")
-            # If original content worked, we still need to do the replacements
-            # but we'll use it as the draft base and note manual updates needed
-            if label == "original":
-                log("⚠️  Using original content — manual updates needed for thumbnail/URLs/body")
+            log("✅ Full content updated!")
             break
-        time.sleep(2)
+        time.sleep(attempt)  # progressive backoff: 1s, 2s, 3s, 4s
 
     if not update_r.ok:
-        log("⚠️  Content update failed — falling back to source copy without full content")
-        # Delete the failed regular shell
-        requests.delete(f"https://connect.mailerlite.com/api/campaigns/{regular_id}", headers=headers, timeout=30)
-        # Fall back to copying the source resend campaign
+        log("⚠️  Content update failed — falling back to source copy")
+        requests.delete(f"https://connect.mailerlite.com/api/campaigns/{campaign_id}", headers=headers, timeout=30)
         copy_r = requests.post(
             f"https://connect.mailerlite.com/api/campaigns/{SOURCE_CAMPAIGN_ID}/copy",
             headers=headers, timeout=30,
         )
         if not copy_r.ok:
-            raise RuntimeError(f"Fallback copy failed: {copy_r.status_code} {copy_r.text}")
+            raise RuntimeError(f"Copy failed: {copy_r.status_code} {copy_r.text}")
         campaign_id = copy_r.json()["data"]["id"]
         email_id    = copy_r.json()["data"]["emails"][0]["id"]
         log(f"Fallback copy — ID: {campaign_id}")
         log(f"📋 Update manually: Thumbnail, YouTube URL, Blog URL, Body copy")
-        log(f"✅ Draft ready — ID: {campaign_id} | Email ID: {email_id}")
-        return campaign_id, email_id
-
-    # Step 5 — Copy the regular campaign (with content) to create a resend draft
-    log("Step 3 — Copying to resend campaign...")
-    copy_r = requests.post(
-        f"https://connect.mailerlite.com/api/campaigns/{regular_id}/copy",
-        headers=headers,
-        timeout=30,
-    )
-    log(f"Copy status: {copy_r.status_code} | {copy_r.text[:200]}")
-
-    # Step 6 — Delete the temporary regular campaign
-    log("Step 4 — Deleting temporary regular campaign...")
-    del_r = requests.delete(
-        f"https://connect.mailerlite.com/api/campaigns/{regular_id}",
-        headers=headers,
-        timeout=30,
-    )
-    log(f"Delete temp: {del_r.status_code}")
-
-    if copy_r.ok:
-        campaign_id = copy_r.json()["data"]["id"]
-        email_id    = copy_r.json()["data"]["emails"][0]["id"]
-        log(f"✅ Resend draft ready — ID: {campaign_id}")
-
-        # Rename the resend copy to remove "Copy of" prefix
-        rename_r = requests.put(
-            f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
-            headers=headers,
-            data=json.dumps({
-                "name":            safe_name,
-                "language_id":     4,
-                "type":            "resend",
-                "emails":          [{"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL}],
-                "groups":          [MAILERLITE_GROUP_ID],
-                "resend_settings": resend_cfg,
-            }),
-            timeout=30,
-        )
-        log(f"Rename resend: {rename_r.status_code}")
-    else:
-        # Copy failed — keep the regular campaign as draft
-        log("⚠️  Copy to resend failed — keeping regular draft")
-        campaign_id = regular_id
-        log(f"Draft ready (regular) — ID: {campaign_id}")
 
     log(f"✅ Draft ready — ID: {campaign_id} | Email ID: {email_id}")
     return campaign_id, email_id
-
-def main():
-    log("🚀 Campaign Creator starting")
-    log(f"   Subject: {SUBJECT}")
-
-    html = build_html()
-    log(f"   HTML length: {len(html)} chars")
-
-    campaign_id, email_id = create_campaign(html)
 
     # Write campaign ID to output for GitHub Actions summary
     with open(os.environ.get("GITHUB_STEP_SUMMARY", "/dev/null"), "a") as f:
