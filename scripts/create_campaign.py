@@ -441,6 +441,15 @@ def create_campaign(html: str) -> str:
     log(f"✅ Draft ready — ID: {campaign_id} | Email ID: {email_id}")
     return campaign_id, email_id
 
+def main():
+    log("🚀 Campaign Creator starting")
+    log(f"   Subject: {SUBJECT}")
+
+    html = build_html()
+    log(f"   HTML length: {len(html)} chars")
+
+    campaign_id, email_id = create_campaign(html)
+
     # Write campaign ID to output for GitHub Actions summary
     with open(os.environ.get("GITHUB_STEP_SUMMARY", "/dev/null"), "a") as f:
         f.write(f"## ✅ MailerLite Draft Created\n")
@@ -448,7 +457,7 @@ def create_campaign(html: str) -> str:
         f.write(f"**Subject:** {SUBJECT}\n\n")
         f.write(f"Go to [MailerLite Drafts](https://dashboard.mailerlite.com/campaigns/draft) to review and send.\n")
 
-    # Output IDs for next step (Playwright)
+    # Output IDs for next step
     env_file = os.environ.get("GITHUB_ENV", "/dev/null")
     with open(env_file, "a") as f:
         f.write(f"CAMPAIGN_ID={campaign_id}\n")
