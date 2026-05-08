@@ -467,7 +467,7 @@
 
       <div class="field">
         <label>Body copy</label>
-        <textarea id="body-copy" rows="5" placeholder="Edit this before sending — pulled from YouTube description" oninput="charCount(this,'body-c',600)"></textarea>
+        <textarea id="body-copy" rows="5" placeholder="Edit this before sending — pulled from YouTube description" oninput="charCount(this,'body-c',400)"></textarea>
         <div class="char-row"><span class="char-count" id="body-c"></span></div>
       </div>
 
@@ -982,7 +982,7 @@ async function fetchAll() {
     document.getElementById('body-copy').value = desc;
     await processThumb();
     charCount(document.getElementById('subject'), 'subj-c', 80);
-    charCount(document.getElementById('body-copy'), 'body-c', 600);
+    charCount(document.getElementById('body-copy'), 'body-c', 400);
 
     state.ytFetched = true;
     setProgress('yt', 'done');
