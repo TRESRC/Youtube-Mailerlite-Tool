@@ -415,6 +415,10 @@ def create_campaign(html: str) -> str:
     email_id   = shell_r.json()["data"]["emails"][0]["id"]
     log(f"Regular shell — ID: {regular_id}")
 
+    # Wait for campaign to initialize on MailerLite's servers
+    import time
+    time.sleep(2)
+
     # Step 4 — Update regular campaign with full content
     log("Step 2 — Pushing full content to regular campaign...")
     email_obj = {
@@ -447,7 +451,22 @@ def create_campaign(html: str) -> str:
         import time; time.sleep(1)
 
     if not update_r.ok:
-        raise RuntimeError(f"Content update failed after 3 attempts: {update_r.text}")
+        log("⚠️  Content update failed — falling back to source copy without full content")
+        # Delete the failed regular shell
+        requests.delete(f"https://connect.mailerlite.com/api/campaigns/{regular_id}", headers=headers, timeout=30)
+        # Fall back to copying the source resend campaign
+        copy_r = requests.post(
+            f"https://connect.mailerlite.com/api/campaigns/{SOURCE_CAMPAIGN_ID}/copy",
+            headers=headers, timeout=30,
+        )
+        if not copy_r.ok:
+            raise RuntimeError(f"Fallback copy failed: {copy_r.status_code} {copy_r.text}")
+        campaign_id = copy_r.json()["data"]["id"]
+        email_id    = copy_r.json()["data"]["emails"][0]["id"]
+        log(f"Fallback copy — ID: {campaign_id}")
+        log(f"📋 Update manually: Thumbnail, YouTube URL, Blog URL, Body copy")
+        log(f"✅ Draft ready — ID: {campaign_id} | Email ID: {email_id}")
+        return campaign_id, email_id
 
     # Step 5 — Copy the regular campaign (with content) to create a resend draft
     log("Step 3 — Copying to resend campaign...")
