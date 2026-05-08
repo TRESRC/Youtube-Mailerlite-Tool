@@ -409,9 +409,9 @@ def create_campaign(html: str) -> str:
 
     # Wait for campaign to initialize on MailerLite's servers
     import time
-    time.sleep(2)
+    time.sleep(3)
 
-    # Step 4 — Update regular campaign with full content
+    # Step 2 — Push content to regular campaign
     log("Step 2 — Pushing full content to regular campaign...")
     email_obj = {
         "subject":   SUBJECT,
@@ -422,25 +422,36 @@ def create_campaign(html: str) -> str:
     if PREHEADER:
         email_obj["preheader_text"] = PREHEADER
 
+    base_put = {
+        "name":        safe_name + " [TEMP]",
+        "language_id": 4,
+        "type":        "regular",
+        "groups":      [MAILERLITE_GROUP_ID],
+    }
+
     update_r = None
-    for attempt in range(1, 4):
+    # Try modified content 3x, then try original source content 2x
+    attempts = (
+        [(new_content, "modified")] * 3 +
+        [(src_content, "original")]  * 2
+    )
+    for attempt, (content_to_use, label) in enumerate(attempts, 1):
+        test_obj = {**email_obj, "content": content_to_use}
         update_r = requests.put(
             f"https://connect.mailerlite.com/api/campaigns/{regular_id}",
             headers=headers,
-            data=json.dumps({
-                "name":        safe_name + " [TEMP]",
-                "language_id": 4,
-                "type":        "regular",
-                "emails":      [email_obj],
-                "groups":      [MAILERLITE_GROUP_ID],
-            }),
+            data=json.dumps({**base_put, "emails": [test_obj]}),
             timeout=30,
         )
-        log(f"Content update attempt {attempt}: {update_r.status_code}")
+        log(f"Attempt {attempt} ({label}): {update_r.status_code} | {update_r.text[:200]}")
         if update_r.ok:
-            log("✅ Content pushed to regular campaign!")
+            log(f"✅ Content pushed ({label})!")
+            # If original content worked, we still need to do the replacements
+            # but we'll use it as the draft base and note manual updates needed
+            if label == "original":
+                log("⚠️  Using original content — manual updates needed for thumbnail/URLs/body")
             break
-        import time; time.sleep(1)
+        time.sleep(2)
 
     if not update_r.ok:
         log("⚠️  Content update failed — falling back to source copy without full content")
