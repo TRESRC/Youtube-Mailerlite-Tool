@@ -393,44 +393,30 @@ def create_campaign(html: str) -> str:
         "resend_delay_type": "hours",
     }
 
-    # Step 3 — Create resend shell (no content)
-    log("Step 1 — Creating resend campaign shell...")
+    # Step 3 — Create regular shell (regular type accepts content updates)
+    log("Step 1 — Creating regular campaign shell...")
     shell_r = requests.post(
         "https://connect.mailerlite.com/api/campaigns",
         headers=headers,
         data=json.dumps({
-            "name":            safe_name,
-            "language_id":     4,
-            "type":            "resend",
-            "emails":          [{"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL}],
-            "groups":          [MAILERLITE_GROUP_ID],
-            "resend_settings": resend_cfg,
+            "name":        safe_name + " [TEMP]",
+            "language_id": 4,
+            "type":        "regular",
+            "emails":      [{"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL}],
+            "groups":      [MAILERLITE_GROUP_ID],
         }),
         timeout=30,
     )
-    log(f"Shell create: {shell_r.status_code} | {shell_r.text[:200]}")
-
+    log(f"Shell create: {shell_r.status_code}")
     if not shell_r.ok:
-        log("Shell create failed — falling back to copy...")
-        copy_r = requests.post(
-            f"https://connect.mailerlite.com/api/campaigns/{SOURCE_CAMPAIGN_ID}/copy",
-            headers=headers, timeout=30,
-        )
-        if not copy_r.ok:
-            raise RuntimeError(f"Copy failed: {copy_r.status_code} {copy_r.text}")
-        campaign_id = copy_r.json()["data"]["id"]
-        email_id    = copy_r.json()["data"]["emails"][0]["id"]
-        log(f"Copied — campaign: {campaign_id} | email: {email_id}")
-        log(f"📋 Update manually: Thumbnail, YouTube URL, Blog URL, Body copy")
-        log(f"✅ Draft ready — ID: {campaign_id} | Email ID: {email_id}")
-        return campaign_id, email_id
+        raise RuntimeError(f"Shell create failed: {shell_r.status_code} {shell_r.text}")
 
-    campaign_id = shell_r.json()["data"]["id"]
-    email_id    = shell_r.json()["data"]["emails"][0]["id"]
-    log(f"Shell created — campaign: {campaign_id} | email: {email_id}")
+    regular_id = shell_r.json()["data"]["id"]
+    email_id   = shell_r.json()["data"]["emails"][0]["id"]
+    log(f"Regular shell — ID: {regular_id}")
 
-    # Step 2 — PUT emails with content (try resend first, fall back to regular)
-    log("Step 2 — Updating campaign with full content...")
+    # Step 4 — Update regular campaign with full content
+    log("Step 2 — Pushing full content to regular campaign...")
     email_obj = {
         "subject":   SUBJECT,
         "from_name": FROM_NAME,
@@ -442,38 +428,70 @@ def create_campaign(html: str) -> str:
 
     update_r = None
     for attempt in range(1, 4):
-        # Try resend type first (preserves auto-resend), fall back to regular
-        for campaign_type, extra in [
-            ("resend", {"resend_settings": resend_cfg}),
-            ("regular", {}),
-        ]:
-            update_r = requests.put(
-                f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
-                headers=headers,
-                data=json.dumps({
-                    "name":        safe_name,
-                    "language_id": 4,
-                    "type":        campaign_type,
-                    "emails":      [email_obj],
-                    "groups":      [MAILERLITE_GROUP_ID],
-                    **extra,
-                }),
-                timeout=30,
-            )
-            log(f"Content update ({campaign_type}) attempt {attempt}: {update_r.status_code} | {update_r.text[:150]}")
-            if update_r.ok:
-                log(f"✅ Full content updated as {campaign_type}!")
-                break
-        if update_r and update_r.ok:
+        update_r = requests.put(
+            f"https://connect.mailerlite.com/api/campaigns/{regular_id}",
+            headers=headers,
+            data=json.dumps({
+                "name":        safe_name + " [TEMP]",
+                "language_id": 4,
+                "type":        "regular",
+                "emails":      [email_obj],
+                "groups":      [MAILERLITE_GROUP_ID],
+            }),
+            timeout=30,
+        )
+        log(f"Content update attempt {attempt}: {update_r.status_code}")
+        if update_r.ok:
+            log("✅ Content pushed to regular campaign!")
             break
         import time; time.sleep(1)
 
     if not update_r.ok:
-        log("⚠️  Content update failed after 3 attempts — draft shell exists, update manually")
-        log(f"   Thumbnail: {IMAGE_URL}")
-        log(f"   YouTube:   {YOUTUBE_URL}")
-        log(f"   Blog URL:  {BLOG_URL}")
-        log(f"   Body copy: {BODY_COPY[:80]}...")
+        raise RuntimeError(f"Content update failed after 3 attempts: {update_r.text}")
+
+    # Step 5 — Copy the regular campaign (with content) to create a resend draft
+    log("Step 3 — Copying to resend campaign...")
+    copy_r = requests.post(
+        f"https://connect.mailerlite.com/api/campaigns/{regular_id}/copy",
+        headers=headers,
+        timeout=30,
+    )
+    log(f"Copy status: {copy_r.status_code} | {copy_r.text[:200]}")
+
+    # Step 6 — Delete the temporary regular campaign
+    log("Step 4 — Deleting temporary regular campaign...")
+    del_r = requests.delete(
+        f"https://connect.mailerlite.com/api/campaigns/{regular_id}",
+        headers=headers,
+        timeout=30,
+    )
+    log(f"Delete temp: {del_r.status_code}")
+
+    if copy_r.ok:
+        campaign_id = copy_r.json()["data"]["id"]
+        email_id    = copy_r.json()["data"]["emails"][0]["id"]
+        log(f"✅ Resend draft ready — ID: {campaign_id}")
+
+        # Rename the resend copy to remove "Copy of" prefix
+        rename_r = requests.put(
+            f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
+            headers=headers,
+            data=json.dumps({
+                "name":            safe_name,
+                "language_id":     4,
+                "type":            "resend",
+                "emails":          [{"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL}],
+                "groups":          [MAILERLITE_GROUP_ID],
+                "resend_settings": resend_cfg,
+            }),
+            timeout=30,
+        )
+        log(f"Rename resend: {rename_r.status_code}")
+    else:
+        # Copy failed — keep the regular campaign as draft
+        log("⚠️  Copy to resend failed — keeping regular draft")
+        campaign_id = regular_id
+        log(f"Draft ready (regular) — ID: {campaign_id}")
 
     log(f"✅ Draft ready — ID: {campaign_id} | Email ID: {email_id}")
     return campaign_id, email_id
