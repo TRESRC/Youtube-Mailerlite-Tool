@@ -372,48 +372,50 @@ def create_campaign(html: str) -> str:
 
     log(f"New content length: {len(new_content)} (original: {len(src_content)})")
 
-    # Step 3 — Copy source to draft
-    log("Copying source to draft...")
-    copy_r = requests.post(
-        f"https://connect.mailerlite.com/api/campaigns/{SOURCE_CAMPAIGN_ID}/copy",
-        headers=headers, timeout=30,
-    )
-    if not copy_r.ok:
-        raise RuntimeError(f"Copy failed: {copy_r.status_code} {copy_r.text}")
-    campaign_id = copy_r.json()["data"]["id"]
-    email_id    = copy_r.json()["data"]["emails"][0]["id"]
-    log(f"Copied — campaign: {campaign_id} | email: {email_id}")
-
-    # Step 4 — Update draft with content using nested array format per MailerLite PHP SDK
-    email_obj = {"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL, "content": new_content}
+    # Step 3 — Create a fresh regular campaign with full content
+    # (Resend type blocks content updates via API — MailerLite bug)
+    # Content manager enables auto-resend manually in MailerLite (30 seconds)
+    log("Creating regular campaign with content...")
+    email_obj = {
+        "subject":   SUBJECT,
+        "from_name": FROM_NAME,
+        "from":      FROM_EMAIL,
+        "content":   new_content,
+    }
     if PREHEADER:
         email_obj["preheader_text"] = PREHEADER
 
-    update = requests.put(
-        f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
+    create_r = requests.post(
+        "https://connect.mailerlite.com/api/campaigns",
         headers=headers,
         json={
-            "name":            safe_name,
-            "language_id":     4,
-            "type":            "resend",
-            "emails":          [[email_obj]],
-            "groups":          [MAILERLITE_GROUP_ID],
-            "resend_settings": {
-                "test_type":         "subject",
-                "select_winner_by":  "c",
-                "b_value":           {"subject": SUBJECT},
-                "resend_delay":      24,
-                "resend_delay_type": "hours",
-            },
+            "name":        safe_name,
+            "language_id": 4,
+            "type":        "regular",
+            "emails":      [email_obj],
+            "groups":      [MAILERLITE_GROUP_ID],
         },
         timeout=30,
     )
-    log(f"Update: {update.status_code} | {update.text[:300]}")
+    log(f"Create: {create_r.status_code} | {create_r.text[:300]}")
 
-    if update.ok:
-        log("✅ Content updated successfully!")
+    if create_r.ok:
+        campaign_id = create_r.json()["data"]["id"]
+        email_id    = create_r.json()["data"]["emails"][0]["id"]
+        log(f"✅ Campaign created with content — ID: {campaign_id}")
+        log(f"⚠️  Remember to enable Auto-resend in MailerLite Settings tab")
     else:
-        log("⚠️  Content update failed — draft exists with correct name")
+        # Fallback — copy resend campaign without content
+        log("Regular create failed — falling back to copy...")
+        copy_r = requests.post(
+            f"https://connect.mailerlite.com/api/campaigns/{SOURCE_CAMPAIGN_ID}/copy",
+            headers=headers, timeout=30,
+        )
+        if not copy_r.ok:
+            raise RuntimeError(f"Copy failed: {copy_r.status_code} {copy_r.text}")
+        campaign_id = copy_r.json()["data"]["id"]
+        email_id    = copy_r.json()["data"]["emails"][0]["id"]
+        log(f"Copied — campaign: {campaign_id} | email: {email_id}")
         log(f"📋 Open draft in MailerLite and update manually:")
         log(f"   Thumbnail: {IMAGE_URL}")
         log(f"   YouTube:   {YOUTUBE_URL}")
