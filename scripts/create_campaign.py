@@ -409,61 +409,35 @@ def create_campaign(html: str) -> str:
     email_id    = shell_r.json()["data"]["emails"][0]["id"]
     log(f"Shell created — campaign: {campaign_id} | email: {email_id}")
 
-    base_put = {
-        "name":        safe_name,
-        "language_id": 4,
-        "type":        "regular",
-        "groups":      [MAILERLITE_GROUP_ID],
+    # Step 2 — PUT emails array with content (must be separate call after shell creation)
+    log("Step 2 — Updating campaign with full content...")
+    email_obj = {
+        "subject":   SUBJECT,
+        "from_name": FROM_NAME,
+        "from":      FROM_EMAIL,
+        "content":   new_content,
     }
+    if PREHEADER:
+        email_obj["preheader_text"] = PREHEADER
 
-    # Step 2 — PUT with name + content at top level (no emails wrapper)
-    log("Step 2 — Sending content at top level...")
-    content_r = requests.put(
+    update_r = requests.put(
         f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
         headers=headers,
-        data=json.dumps({**base_put, "content": new_content}),
+        data=json.dumps({
+            "name":        safe_name,
+            "language_id": 4,
+            "type":        "regular",
+            "emails":      [email_obj],
+            "groups":      [MAILERLITE_GROUP_ID],
+        }),
         timeout=30,
     )
-    log(f"Content top-level PUT: {content_r.status_code} | {content_r.text[:200]}")
+    log(f"Content update: {update_r.status_code} | {update_r.text[:200]}")
 
-    # Step 3 — PUT with name + emails array containing content
-    log("Step 3 — Sending emails array with content...")
-    emails_r = requests.put(
-        f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
-        headers=headers,
-        data=json.dumps({**base_put, "emails": [{"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL, "content": new_content}]}),
-        timeout=30,
-    )
-    log(f"Emails with content PUT: {emails_r.status_code} | {emails_r.text[:200]}")
-
-    # Step 4 — PUT with name + emails array WITHOUT content (just metadata)
-    log("Step 4 — Sending metadata only PUT...")
-    meta_r = requests.put(
-        f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
-        headers=headers,
-        data=json.dumps({**base_put, "emails": [{"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL}]}),
-        timeout=30,
-    )
-    log(f"Metadata PUT: {meta_r.status_code} | {meta_r.text[:200]}")
-
-    if content_r.ok or emails_r.ok or meta_r.ok:
-        log("✅ Content update succeeded!")
+    if update_r.ok:
+        log("✅ Full content updated successfully!")
     else:
-        log("⚠️  Content updates failed — falling back to copy...")
-        copy_r = requests.post(
-            f"https://connect.mailerlite.com/api/campaigns/{SOURCE_CAMPAIGN_ID}/copy",
-            headers=headers, timeout=30,
-        )
-        if not copy_r.ok:
-            raise RuntimeError(f"Copy failed: {copy_r.status_code} {copy_r.text}")
-        campaign_id = copy_r.json()["data"]["id"]
-        email_id    = copy_r.json()["data"]["emails"][0]["id"]
-        log(f"Copied — campaign: {campaign_id} | email: {email_id}")
-        log(f"📋 Open draft in MailerLite and update manually:")
-        log(f"   Thumbnail: {IMAGE_URL}")
-        log(f"   YouTube:   {YOUTUBE_URL}")
-        log(f"   Blog URL:  {BLOG_URL}")
-        log(f"   Body copy: {BODY_COPY[:80]}...")
+        log("⚠️  Content update failed — draft shell exists, update manually")
 
     log(f"✅ Draft ready — ID: {campaign_id} | Email ID: {email_id}")
     return campaign_id, email_id
