@@ -366,9 +366,14 @@ def create_campaign(html: str) -> str:
     if BODY_COPY:
         body_match = re.search(r'(<td[^>]*id="bodyText-10"[^>]*>)(.*?)(</td>)', new_content, re.DOTALL)
         if body_match:
-            new_body = ''.join(f'<p style="margin-top: 0px; margin-bottom: 10px; line-height: 150%;">{p}</p>' for p in BODY_COPY.split('\n') if p.strip())
-            new_content = new_content[:body_match.start(2)] + new_body + new_content[body_match.end(2):]
-            log("Replaced body text")
+            old_body_len = len(body_match.group(2))
+            new_body_html = ''.join(f'<p style="margin-top: 0px; margin-bottom: 10px; line-height: 150%;">{p}</p>' for p in BODY_COPY.split('\n') if p.strip())
+            # Pad new body to match original length to avoid MailerLite size validation
+            padding_needed = old_body_len - len(new_body_html)
+            if padding_needed > 0:
+                new_body_html += '<!-- ' + ' ' * padding_needed + '-->'
+            new_content = new_content[:body_match.start(2)] + new_body_html + new_content[body_match.end(2):]
+            log(f"Replaced body text (old: {old_body_len} chars, new: {len(new_body_html)} chars)")
 
     log(f"New content length: {len(new_content)} (original: {len(src_content)})")
 
