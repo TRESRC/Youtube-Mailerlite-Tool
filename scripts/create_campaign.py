@@ -409,42 +409,44 @@ def create_campaign(html: str) -> str:
     email_id    = shell_r.json()["data"]["emails"][0]["id"]
     log(f"Shell created — campaign: {campaign_id} | email: {email_id}")
 
-    # Step 2 — PUT only the content, nothing else
-    log("Step 2 — Sending content only...")
+    base_put = {
+        "name":        safe_name,
+        "language_id": 4,
+        "type":        "regular",
+        "groups":      [MAILERLITE_GROUP_ID],
+    }
+
+    # Step 2 — PUT with name + content at top level (no emails wrapper)
+    log("Step 2 — Sending content at top level...")
     content_r = requests.put(
         f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
         headers=headers,
-        data=json.dumps({"content": new_content}),
+        data=json.dumps({**base_put, "content": new_content}),
         timeout=30,
     )
-    log(f"Content only PUT: {content_r.status_code} | {content_r.text[:200]}")
+    log(f"Content top-level PUT: {content_r.status_code} | {content_r.text[:200]}")
 
-    # Step 3 — PUT only the emails array with content
+    # Step 3 — PUT with name + emails array containing content
     log("Step 3 — Sending emails array with content...")
     emails_r = requests.put(
         f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
         headers=headers,
-        data=json.dumps({
-            "emails": [{"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL, "content": new_content}],
-        }),
+        data=json.dumps({**base_put, "emails": [{"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL, "content": new_content}]}),
         timeout=30,
     )
     log(f"Emails with content PUT: {emails_r.status_code} | {emails_r.text[:200]}")
 
-    # Step 4 — PUT preheader separately
-    if PREHEADER:
-        log("Step 4 — Sending preheader...")
-        pre_r = requests.put(
-            f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
-            headers=headers,
-            data=json.dumps({
-                "emails": [{"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL, "preheader_text": PREHEADER}],
-            }),
-            timeout=30,
-        )
-        log(f"Preheader PUT: {pre_r.status_code} | {pre_r.text[:200]}")
+    # Step 4 — PUT with name + emails array WITHOUT content (just metadata)
+    log("Step 4 — Sending metadata only PUT...")
+    meta_r = requests.put(
+        f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
+        headers=headers,
+        data=json.dumps({**base_put, "emails": [{"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL}]}),
+        timeout=30,
+    )
+    log(f"Metadata PUT: {meta_r.status_code} | {meta_r.text[:200]}")
 
-    if content_r.ok or emails_r.ok:
+    if content_r.ok or emails_r.ok or meta_r.ok:
         log("✅ Content update succeeded!")
     else:
         log("⚠️  Content updates failed — falling back to copy...")
