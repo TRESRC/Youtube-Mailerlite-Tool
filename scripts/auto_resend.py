@@ -11,6 +11,8 @@ from datetime import datetime, timezone, timedelta
 
 MAILERLITE_API_KEY = os.environ["MAILERLITE_API_KEY"]
 RESEND_DELAY_HOURS = 24
+TEST_CAMPAIGN_ID   = os.environ.get("TEST_CAMPAIGN_ID", "")
+DRY_RUN            = os.environ.get("DRY_RUN", "true").lower() == "true"  # Safe by default
 
 def log(msg):
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
@@ -123,7 +125,14 @@ def create_resend(campaign):
         log(f"⚠️  Update failed")
         return False
 
-    # Step 3 — Schedule immediately
+    # Step 3 — Schedule/send (skip in dry run mode)
+    if DRY_RUN:
+        log(f"🧪 DRY RUN — would send resend campaign now (ID: {new_id})")
+        log(f"   Subject: {resend_subject}")
+        log(f"   Filter: non-openers of campaign {campaign_id}")
+        log(f"   To actually send, run with DRY_RUN=false")
+        return True
+
     send_r = requests.post(
         f"https://connect.mailerlite.com/api/campaigns/{new_id}/schedule",
         headers=headers,
@@ -141,6 +150,21 @@ def create_resend(campaign):
 
 def main():
     log("🔄 Auto-resend check starting...")
+
+    # Test mode — process a specific campaign regardless of send time
+    if TEST_CAMPAIGN_ID:
+        log(f"🧪 TEST MODE — processing campaign: {TEST_CAMPAIGN_ID}")
+        r = requests.get(
+            f"https://connect.mailerlite.com/api/campaigns/{TEST_CAMPAIGN_ID}",
+            headers=headers, timeout=30,
+        )
+        if not r.ok:
+            log(f"❌ Campaign not found: {r.text[:200]}")
+            return
+        campaign = r.json()["data"]
+        log(f"Campaign: {campaign['name']} | type: {campaign['type']} | status: {campaign['status']}")
+        create_resend(campaign)
+        return
     now = datetime.now(timezone.utc)
     window_start = now - timedelta(hours=RESEND_DELAY_HOURS + 1)
     window_end   = now - timedelta(hours=RESEND_DELAY_HOURS)
