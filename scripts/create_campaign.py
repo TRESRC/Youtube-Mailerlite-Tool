@@ -367,11 +367,17 @@ def create_campaign(html: str) -> str:
     if not copy_r.ok:
         raise RuntimeError(f"Copy failed: {copy_r.status_code} {copy_r.text}")
     campaign_id = copy_r.json()["data"]["id"]
-    email_id    = copy_r.json()["data"]["emails"][0]["id"]
-    log(f"Copied — campaign: {campaign_id}")
-    log(f"All email IDs: {[e['id'] for e in copy_r.json()['data']['emails']]}")
-    log(f"Campaign type: {copy_r.json()['data']['type']}")
-    log(f"Settings: {json.dumps(copy_r.json()['data'].get('settings', {}))}")
+    all_emails  = copy_r.json()["data"]["emails"]
+    email_id    = all_emails[0]["id"]
+    log(f"Copied — campaign: {campaign_id} | emails: {len(all_emails)}")
+
+    # Delete extra email variants (source has A/B/C test — we only want 1)
+    for extra_email in all_emails[1:]:
+        del_r = requests.delete(
+            f"https://connect.mailerlite.com/api/campaigns/{campaign_id}/emails/{extra_email['id']}",
+            headers=headers, timeout=30,
+        )
+        log(f"Deleted extra email {extra_email['id']}: {del_r.status_code}")
 
     # Step 2 — Rename with correct subject and resend settings
     rename_r = requests.put(
