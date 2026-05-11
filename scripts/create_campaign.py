@@ -359,16 +359,23 @@ def create_campaign(html: str) -> str:
     if PREHEADER:
         email_obj["preheader_text"] = PREHEADER
 
+    payload = {
+        "name":        safe_name,
+        "language_id": 4,
+        "type":        "regular",
+        "emails":      [email_obj],
+        "groups":      [MAILERLITE_GROUP_ID],
+    }
+    # Log payload without full content for debugging
+    debug_payload = {**payload, "emails": [{**email_obj, "content": f"[{len(html)} chars]"}]}
+    log(f"Payload: {json.dumps(debug_payload)}")
+    log(f"emails type: {type(payload['emails'])}, emails[0] type: {type(payload['emails'][0])}")
+    log(f"Content type in email_obj: {type(email_obj['content'])}")
+
     update_r = requests.put(
         f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
         headers=headers,
-        json={
-            "name":        safe_name,
-            "language_id": 4,
-            "type":        "regular",
-            "emails":      [email_obj],
-            "groups":      [MAILERLITE_GROUP_ID],
-        },
+        json=payload,
         timeout=30,
     )
     log(f"Content update: {update_r.status_code} | {update_r.text[:200]}")
