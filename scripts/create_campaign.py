@@ -425,6 +425,12 @@ def create_campaign(html: str) -> str:
         def to_ascii(s):
             return s.encode('ascii', 'xmlcharrefreplace').decode('ascii')
 
+        # Sanitize HTML - replace non-ASCII with HTML entities
+        non_ascii = [(i, c, ord(c)) for i, c in enumerate(html) if ord(c) > 127]
+        log(f"Non-ASCII chars in HTML: {len(non_ascii)}")
+        sanitized_html = html.encode('ascii', 'xmlcharrefreplace').decode('ascii')
+        log(f"Sanitized HTML length: {len(sanitized_html)}")
+
         email_obj = {
             "subject":   to_ascii(SUBJECT),
             "from_name": FROM_NAME,
@@ -434,18 +440,6 @@ def create_campaign(html: str) -> str:
         if PREHEADER:
             email_obj["preheader_text"] = to_ascii(PREHEADER)
         log(f"Subject after sanitize: {email_obj['subject']}")
-
-        # Find all non-ASCII characters in HTML
-        non_ascii = [(i, c, ord(c)) for i, c in enumerate(html) if ord(c) > 127]
-        log(f"Non-ASCII chars in HTML: {len(non_ascii)}")
-        for pos, char, code in non_ascii[:10]:
-            log(f"  pos {pos}: U+{code:04X} {char!r} context: {html[max(0,pos-30):pos+30]!r}")
-
-        # Sanitize HTML - replace non-ASCII with HTML entities
-        sanitized_html = html.encode('ascii', 'xmlcharrefreplace').decode('ascii')
-        log(f"Sanitized HTML length: {len(sanitized_html)}")
-
-        email_obj["content"] = sanitized_html
 
         content_r = requests.put(
             f"https://connect.mailerlite.com/api/campaigns/{shell_id}",
