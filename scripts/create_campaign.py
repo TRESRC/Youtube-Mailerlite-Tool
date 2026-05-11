@@ -322,7 +322,6 @@ img{{border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;}
 </html>"""
 
 def create_campaign(html: str) -> str:
-    import re, time
     today     = datetime.now(timezone.utc).strftime("%b %d, %Y")
     safe_name = f"{SUBJECT} - {today}"
     headers   = {
@@ -332,51 +331,7 @@ def create_campaign(html: str) -> str:
     }
     SOURCE_CAMPAIGN_ID = "186652362153133094"
 
-    # Step 1 — Fetch source campaign content for find-and-replace
-    log("Fetching source campaign...")
-    src_r = requests.get(
-        f"https://connect.mailerlite.com/api/campaigns/{SOURCE_CAMPAIGN_ID}",
-        headers=headers, timeout=30,
-    )
-    src_r.raise_for_status()
-    src_data    = src_r.json()["data"]
-    src_email   = src_data["emails"][0]
-    src_content = src_email.get("content", "")
-    src_subject = src_email.get("subject", "")
-    log(f"Source content length: {len(src_content)}")
-
-    # Step 2 — Find-and-replace dynamic content
-    new_content = src_content
-    new_content = new_content.replace(src_subject, SUBJECT)
-
-    if IMAGE_URL:
-        imgs = re.findall(r'https://storage\.mlcdn\.com/account_image/318100/(?!S7zmBlAJIt7XKgyLUqSgmNMmnla5iQRvcn2nHClK|BrGoqFUD9UYLkqhmhltu3YEqQdUtDxMunlMGyUlc)[^"\'<>\s]+', src_content)
-        if imgs:
-            log(f"Replacing thumbnail: {imgs[0][:80]}...")
-            new_content = new_content.replace(imgs[0], IMAGE_URL)
-
-    for old_url in set(re.findall(r'https://(?:youtu\.be|www\.youtube\.com/watch\?v=)[^"\'&\s]+', src_content)):
-        new_content = new_content.replace(old_url, YOUTUBE_URL)
-        log(f"Replaced YouTube: {old_url}")
-
-    for old_url in set(re.findall(r'https://theresource\.tv/video/[^"\'&\s]+', src_content)):
-        new_content = new_content.replace(old_url, BLOG_URL)
-        log(f"Replaced blog: {old_url}")
-
-    if BODY_COPY:
-        body_match = re.search(r'(<td[^>]*id="bodyText-10"[^>]*>)(.*?)(</td>)', new_content, re.DOTALL)
-        if body_match:
-            old_body_len = len(body_match.group(2))
-            new_body_html = ''.join(f'<p style="margin-top: 0px; margin-bottom: 10px; line-height: 150%;">{p}</p>' for p in BODY_COPY.split('\n') if p.strip())
-            padding_needed = old_body_len - len(new_body_html)
-            if padding_needed > 0:
-                new_body_html += '<!-- ' + ' ' * padding_needed + '-->'
-            new_content = new_content[:body_match.start(2)] + new_body_html + new_content[body_match.end(2):]
-            log(f"Replaced body text (old: {old_body_len}, new: {len(new_body_html)})")
-
-    log(f"New content length: {len(new_content)} (original: {len(src_content)})")
-
-    # Step 3 — Create regular campaign shell (no content)
+    # Step 1 — Create regular campaign shell (no content)
     log("Creating campaign shell...")
     shell_r = requests.post(
         "https://connect.mailerlite.com/api/campaigns",
@@ -397,41 +352,8 @@ def create_campaign(html: str) -> str:
     email_id    = shell_r.json()["data"]["emails"][0]["id"]
     log(f"Shell created — ID: {campaign_id}")
 
-    # TEST: Send simple content first to confirm API works
-    # MailerLite support confirmed the issue is with HTML escaping, not API format
-    test_obj = {"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL, "content": "Test"}
-    test_r = requests.put(
-        f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
-        headers=headers,
-        data=json.dumps({
-            "name":        safe_name,
-            "language_id": 4,
-            "type":        "regular",
-            "emails":      [test_obj],
-            "groups":      [MAILERLITE_GROUP_ID],
-        }),
-        timeout=30,
-    )
-    log(f"Test content update: {test_r.status_code} | {test_r.text[:200]}")
-
-    # Now try with actual HTML content
-    email_obj = {"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL, "content": new_content}
-    if PREHEADER:
-        email_obj["preheader_text"] = PREHEADER
-
-    # Sanitize content - ensure proper encoding
-    # Remove any null bytes or control characters that break JSON
-    import unicodedata
-    sanitized_content = new_content.encode('utf-8', errors='replace').decode('utf-8')
-    sanitized_content = ''.join(c for c in sanitized_content if unicodedata.category(c) != 'Cc' or c in '\n\r\t')
-    email_obj["content"] = sanitized_content
-    log(f"Sanitized content length: {len(sanitized_content)}")
-
-    # Use our own clean HTML template (not source campaign's rendered HTML)
-    # Source campaign HTML contains MailerLite template variables that get rejected
-    log(f"Using clean HTML template: {len(html)} chars")
-    log(f"First 100 chars: {html[:100]!r}")
-
+    # Step 2 — Push our clean HTML template as content
+    log(f"Pushing clean HTML ({len(html)} chars)...")
     email_obj = {"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL, "content": html}
     if PREHEADER:
         email_obj["preheader_text"] = PREHEADER
@@ -496,4 +418,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
