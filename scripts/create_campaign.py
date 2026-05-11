@@ -428,6 +428,10 @@ def create_campaign(html: str) -> str:
         log(f"✅ Content at: https://dashboard.mailerlite.com/campaigns/{shell_id}/step-content")
 
     # Step 3 — Rename resend copy with correct subject
+    # Resend campaigns have TWO emails (original send + resend variant)
+    email_1 = {"subject": safe_subject, "from_name": FROM_NAME, "from": FROM_EMAIL}
+    email_2 = {"subject": safe_subject, "from_name": FROM_NAME, "from": FROM_EMAIL}
+
     rename_r = requests.put(
         f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
         headers=headers,
@@ -435,15 +439,33 @@ def create_campaign(html: str) -> str:
             "name":            safe_campaign_name,
             "language_id":     4,
             "type":            "resend",
-            "emails":          [{"subject": safe_subject, "from_name": FROM_NAME, "from": FROM_EMAIL}],
+            "emails":          [email_1, email_2],
             "groups":          [MAILERLITE_GROUP_ID],
             "resend_settings": resend_cfg,
         },
         timeout=30,
     )
-    log(f"Rename resend: {rename_r.status_code} | {rename_r.text[:200]}")
+    log(f"Rename resend: {rename_r.status_code} | {rename_r.text[:300]}")
 
-    log(f"✅ Draft ready — resend: {campaign_id} | content ref: {shell_id}")
+    # Also try pushing content to resend campaign with two email objects
+    log("Attempting content push to resend campaign with two email objects...")
+    resend_content_r = requests.put(
+        f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
+        headers=headers,
+        json={
+            "name":            safe_campaign_name,
+            "language_id":     4,
+            "type":            "resend",
+            "emails":          [
+                {"subject": safe_subject, "from_name": FROM_NAME, "from": FROM_EMAIL, "content": safe_html},
+                {"subject": safe_subject, "from_name": FROM_NAME, "from": FROM_EMAIL, "content": safe_html},
+            ],
+            "groups":          [MAILERLITE_GROUP_ID],
+            "resend_settings": resend_cfg,
+        },
+        timeout=30,
+    )
+    log(f"Resend content push: {resend_content_r.status_code} | {resend_content_r.text[:300]}")
     return campaign_id, email_id
 
 def main():
@@ -465,6 +487,7 @@ def main():
     with open(env_file, "a") as f:
         f.write(f"CAMPAIGN_ID={campaign_id}\n")
         f.write(f"EMAIL_ID={email_id}\n")
+        f.write(f"SHELL_ID={shell_id}\n")
 
     print(f"::set-output name=campaign_id::{campaign_id}")
     log("Done.")
