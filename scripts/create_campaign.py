@@ -399,6 +399,21 @@ def create_campaign(html: str) -> str:
         shell_id = shell_r.json()["data"]["id"]
         log(f"Shell created — ID: {shell_id}")
 
+        # Warmup PUT with minimal content (primes the campaign for full content)
+        requests.put(
+            f"https://connect.mailerlite.com/api/campaigns/{shell_id}",
+            headers=headers,
+            json={
+                "name":        safe_name + " [content]",
+                "language_id": 4,
+                "type":        "regular",
+                "emails":      [{"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL, "content": "<p>Loading...</p>"}],
+                "groups":      [MAILERLITE_GROUP_ID],
+            },
+            timeout=30,
+        )
+        log("Warmup PUT done")
+
         email_obj = {"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL, "content": html}
         if PREHEADER:
             email_obj["preheader_text"] = PREHEADER
