@@ -400,6 +400,7 @@ def create_campaign(html: str) -> str:
         log(f"Shell created — ID: {shell_id}")
 
         # Multiple warmup PUTs with escalating content (mirrors the working binary search pattern)
+        ascii_subject = SUBJECT.encode('ascii', errors='replace').decode('ascii')
         warmup_sizes = [100, 500, 1000, 2000, 4000, 8000, 12000, 16000]
         for size in warmup_sizes:
             chunk = html[:size]
@@ -410,7 +411,7 @@ def create_campaign(html: str) -> str:
                     "name":        safe_name + " [content]",
                     "language_id": 4,
                     "type":        "regular",
-                    "emails":      [{"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL, "content": chunk}],
+                    "emails":      [{"subject": ascii_subject, "from_name": FROM_NAME, "from": FROM_EMAIL, "content": chunk}],
                     "groups":      [MAILERLITE_GROUP_ID],
                 },
                 timeout=30,
@@ -420,9 +421,26 @@ def create_campaign(html: str) -> str:
                 break
         log(f"Warmup complete (last status: {wu_r.status_code})")
 
-        email_obj = {"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL, "content": html}
+        email_obj = {
+            "subject":   SUBJECT,
+            "from_name": FROM_NAME,
+            "from":      FROM_EMAIL,
+            "content":   html,
+        }
         if PREHEADER:
             email_obj["preheader_text"] = PREHEADER
+
+        # Find all non-ASCII characters in HTML
+        non_ascii = [(i, c, ord(c)) for i, c in enumerate(html) if ord(c) > 127]
+        log(f"Non-ASCII chars in HTML: {len(non_ascii)}")
+        for pos, char, code in non_ascii[:10]:
+            log(f"  pos {pos}: U+{code:04X} {char!r} context: {html[max(0,pos-30):pos+30]!r}")
+
+        # Sanitize HTML - replace non-ASCII with HTML entities
+        sanitized_html = html.encode('ascii', 'xmlcharrefreplace').decode('ascii')
+        log(f"Sanitized HTML length: {len(sanitized_html)}")
+
+        email_obj["content"] = sanitized_html
 
         content_r = requests.put(
             f"https://connect.mailerlite.com/api/campaigns/{shell_id}",
@@ -436,7 +454,7 @@ def create_campaign(html: str) -> str:
             },
             timeout=30,
         )
-        log(f"Content shell update: {content_r.status_code}")
+        log(f"Content shell update: {content_r.status_code} | subject chars: {[ord(c) for c in email_obj['subject'] if ord(c) > 127]}")
         if content_r.ok:
             log("✅ Content shell ready — review at: "
                 f"https://dashboard.mailerlite.com/campaigns/{shell_id}/step-content")
