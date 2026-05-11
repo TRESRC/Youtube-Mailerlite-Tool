@@ -341,7 +341,26 @@ def create_campaign(html: str) -> str:
     }
     SOURCE_CAMPAIGN_ID = "186652362153133094"
 
-    # Step 1 — Copy source campaign (builder-editable, resend configured)
+    def to_ascii(s):
+        """Convert unicode chars to HTML entities so MailerLite API doesn't reject them."""
+        return s.encode('ascii', 'xmlcharrefreplace').decode('ascii')
+
+    # Sanitize all text fields — unicode chars break MailerLite's JSON parser
+    safe_subject  = to_ascii(SUBJECT)
+    safe_preheader = to_ascii(PREHEADER) if PREHEADER else ""
+    safe_html     = html.encode('ascii', 'xmlcharrefreplace').decode('ascii')
+    safe_campaign_name = to_ascii(safe_name)
+    log(f"HTML sanitized: {len(html)} → {len(safe_html)} chars")
+
+    resend_cfg = {
+        "test_type":         "subject",
+        "select_winner_by":  "c",
+        "b_value":           {"subject": safe_subject},
+        "resend_delay":      24,
+        "resend_delay_type": "hours",
+    }
+
+    # Step 1 — Copy source campaign (builder-editable + resend configured)
     log("Copying source campaign...")
     copy_r = requests.post(
         f"https://connect.mailerlite.com/api/campaigns/{SOURCE_CAMPAIGN_ID}/copy",
@@ -353,122 +372,88 @@ def create_campaign(html: str) -> str:
     email_id    = copy_r.json()["data"]["emails"][0]["id"]
     log(f"Copied — campaign: {campaign_id}")
 
-    # Step 2 — Rename the copy with correct subject
-    email_meta = {"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL}
-    if PREHEADER:
-        email_meta["preheader_text"] = PREHEADER
-
+    # Step 2 — Rename the copy with correct subject and resend settings
     rename_r = requests.put(
         f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
         headers=headers,
         json={
-            "name":            safe_name,
+            "name":            safe_campaign_name,
             "language_id":     4,
             "type":            "resend",
-            "emails":          [email_meta],
+            "emails":          [{"subject": safe_subject, "from_name": FROM_NAME, "from": FROM_EMAIL,
+                                 **({"preheader_text": safe_preheader} if safe_preheader else {})}],
             "groups":          [MAILERLITE_GROUP_ID],
-            "resend_settings": {
-                "test_type":         "subject",
-                "select_winner_by":  "c",
-                "b_value":           {"subject": SUBJECT},
-                "resend_delay":      24,
-                "resend_delay_type": "hours",
-            },
+            "resend_settings": resend_cfg,
         },
         timeout=30,
     )
     log(f"Rename: {rename_r.status_code}")
 
-    # Step 3 — Create regular shell and push content (proven working approach)
+    # Step 3 — Create regular shell for content (regular type accepts HTML content)
     log("Creating content shell...")
     shell_r = requests.post(
         "https://connect.mailerlite.com/api/campaigns",
         headers=headers,
         json={
-            "name":        safe_name + " [content]",
+            "name":        safe_campaign_name + " [content]",
             "language_id": 4,
             "type":        "regular",
-            "emails":      [{"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL}],
+            "emails":      [{"subject": safe_subject, "from_name": FROM_NAME, "from": FROM_EMAIL}],
             "groups":      [MAILERLITE_GROUP_ID],
         },
         timeout=30,
     )
     if not shell_r.ok:
-        log(f"⚠️  Shell failed: {shell_r.text[:200]}")
-    else:
-        shell_id = shell_r.json()["data"]["id"]
-        log(f"Shell created — ID: {shell_id}")
+        log(f"⚠️  Content shell failed: {shell_r.text[:200]}")
+        log(f"✅ Builder draft ready (no content shell) — ID: {campaign_id}")
+        return campaign_id, email_id
 
-        # Multiple warmup PUTs with escalating content (mirrors the working binary search pattern)
-        ascii_subject = SUBJECT.encode('ascii', 'xmlcharrefreplace').decode('ascii')
-        ascii_name    = safe_name.encode('ascii', 'xmlcharrefreplace').decode('ascii')
-        warmup_sizes = [100, 500, 1000, 2000, 4000, 8000, 12000, 16000]
-        for size in warmup_sizes:
-            chunk = html[:size]
-            wu_r = requests.put(
-                f"https://connect.mailerlite.com/api/campaigns/{shell_id}",
-                headers=headers,
-                json={
-                    "name":        ascii_name + " [content]",
-                    "language_id": 4,
-                    "type":        "regular",
-                    "emails":      [{"subject": ascii_subject, "from_name": FROM_NAME, "from": FROM_EMAIL, "content": chunk}],
-                    "groups":      [MAILERLITE_GROUP_ID],
-                },
-                timeout=30,
-            )
-            if not wu_r.ok:
-                log(f"Warmup {size} failed: {wu_r.text[:100]}")
-                break
-        log(f"Warmup complete (last status: {wu_r.status_code})")
+    shell_id = shell_r.json()["data"]["id"]
+    log(f"Shell created — ID: {shell_id}")
 
-        def to_ascii(s):
-            return s.encode('ascii', 'xmlcharrefreplace').decode('ascii')
-
-        # Sanitize HTML - replace non-ASCII with HTML entities
-        non_ascii = [(i, c, ord(c)) for i, c in enumerate(html) if ord(c) > 127]
-        log(f"Non-ASCII chars in HTML: {len(non_ascii)}")
-        sanitized_html = html.encode('ascii', 'xmlcharrefreplace').decode('ascii')
-        log(f"Sanitized HTML length: {len(sanitized_html)}")
-
-        email_obj = {
-            "subject":   to_ascii(SUBJECT),
-            "from_name": FROM_NAME,
-            "from":      FROM_EMAIL,
-            "content":   sanitized_html,
-        }
-        if PREHEADER:
-            email_obj["preheader_text"] = to_ascii(PREHEADER)
-        log(f"Subject after sanitize: {email_obj['subject']}")
-
-        content_r = requests.put(
+    # Step 4 — Warmup PUTs (MailerLite requires prior PUT before accepting full HTML)
+    for size in [100, 500, 1000, 2000, 4000, 8000, 12000, 16000]:
+        wu = requests.put(
             f"https://connect.mailerlite.com/api/campaigns/{shell_id}",
             headers=headers,
             json={
-                "name":        ascii_name + " [content]",
+                "name":        safe_campaign_name + " [content]",
                 "language_id": 4,
                 "type":        "regular",
-                "emails":      [email_obj],
+                "emails":      [{"subject": safe_subject, "from_name": FROM_NAME, "from": FROM_EMAIL,
+                                 "content": safe_html[:size]}],
                 "groups":      [MAILERLITE_GROUP_ID],
             },
             timeout=30,
         )
-        log(f"Content shell update: {content_r.status_code} | subject chars: {[ord(c) for c in email_obj['subject'] if ord(c) > 127]}")
-        if content_r.ok:
-            log("✅ Content shell ready — review at: "
-                f"https://dashboard.mailerlite.com/campaigns/{shell_id}/step-content")
-        else:
-            log(f"⚠️  Content push failed: {content_r.text[:200]}")
+        if not wu.ok:
+            log(f"Warmup {size} failed: {wu.text[:100]}")
+            break
 
-        # Delete the temp shell after content manager has copied what they need
-        # (we leave it for now — content manager can reference it)
+    # Step 5 — Push full sanitized HTML content
+    email_obj = {"subject": safe_subject, "from_name": FROM_NAME, "from": FROM_EMAIL, "content": safe_html}
+    if safe_preheader:
+        email_obj["preheader_text"] = safe_preheader
 
-    log(f"✅ Builder-editable draft ready — ID: {campaign_id}")
-    log(f"📋 Use content shell for reference, update builder draft manually:")
-    log(f"   Thumbnail: {IMAGE_URL}")
-    log(f"   YouTube:   {YOUTUBE_URL}")
-    log(f"   Blog URL:  {BLOG_URL}")
-    log(f"   Body copy: {BODY_COPY[:80]}...")
+    content_r = requests.put(
+        f"https://connect.mailerlite.com/api/campaigns/{shell_id}",
+        headers=headers,
+        json={
+            "name":        safe_campaign_name + " [content]",
+            "language_id": 4,
+            "type":        "regular",
+            "emails":      [email_obj],
+            "groups":      [MAILERLITE_GROUP_ID],
+        },
+        timeout=30,
+    )
+    log(f"Content shell update: {content_r.status_code}")
+    if content_r.ok:
+        log(f"✅ Content shell ready — https://dashboard.mailerlite.com/campaigns/{shell_id}/step-content")
+    else:
+        log(f"⚠️  Content push failed: {content_r.text[:200]}")
+
+    log(f"✅ Draft ready — builder: {campaign_id} | content: {shell_id}")
     return campaign_id, email_id
 
 def main():
@@ -480,14 +465,12 @@ def main():
 
     campaign_id, email_id = create_campaign(html)
 
-    # Write campaign ID to output for GitHub Actions summary
     with open(os.environ.get("GITHUB_STEP_SUMMARY", "/dev/null"), "a") as f:
         f.write(f"## ✅ MailerLite Draft Created\n")
         f.write(f"**Campaign ID:** {campaign_id}\n\n")
         f.write(f"**Subject:** {SUBJECT}\n\n")
         f.write(f"Go to [MailerLite Drafts](https://dashboard.mailerlite.com/campaigns/draft) to review and send.\n")
 
-    # Output IDs for next step
     env_file = os.environ.get("GITHUB_ENV", "/dev/null")
     with open(env_file, "a") as f:
         f.write(f"CAMPAIGN_ID={campaign_id}\n")
