@@ -18,10 +18,19 @@ FROM_EMAIL          = "theguys@theresource.tv"
 UNSUBSCRIBE_URL     = "https://theresource.tv/unsubscribe"
 
 # ── Content from workflow inputs (passed by the web tool) ─────────────────────
-SUBJECT     = os.environ["INPUT_SUBJECT"]
-PREHEADER   = os.environ.get("INPUT_PREHEADER", "")
+def sanitize(text):
+    """Replace smart quotes and Unicode chars that break MailerLite's API parser."""
+    return (text
+        .replace('\u2018', "'").replace('\u2019', "'")   # smart single quotes
+        .replace('\u201c', '"').replace('\u201d', '"')   # smart double quotes
+        .replace('\u2013', '-').replace('\u2014', '--')  # en/em dashes
+        .replace('\u00a0', ' ').replace('\u200b', '')    # non-breaking/zero-width space
+    )
+
+SUBJECT     = sanitize(os.environ["INPUT_SUBJECT"])
+PREHEADER   = sanitize(os.environ.get("INPUT_PREHEADER", ""))
 IMAGE_URL   = os.environ.get("INPUT_IMAGE_URL", "")
-BODY_COPY   = os.environ.get("INPUT_BODY_COPY", "")[:400]
+BODY_COPY   = sanitize(os.environ.get("INPUT_BODY_COPY", "")[:400])
 YOUTUBE_URL = os.environ.get("INPUT_YOUTUBE_URL", "")
 BLOG_URL    = os.environ.get("INPUT_BLOG_URL", "")
 INSTAGRAM   = os.environ.get("INPUT_INSTAGRAM_URL", "")
@@ -366,12 +375,28 @@ def create_campaign(html: str) -> str:
         "emails":      [email_obj],
         "groups":      [MAILERLITE_GROUP_ID],
     }
-    # Log payload without full content for debugging
-    debug_payload = {**payload, "emails": [{**email_obj, "content": f"[{len(html)} chars]"}]}
-    log(f"Payload: {json.dumps(debug_payload)}")
-    log(f"emails type: {type(payload['emails'])}, emails[0] type: {type(payload['emails'][0])}")
-    log(f"Content type in email_obj: {type(email_obj['content'])}")
 
+    # Test A: minimal HTML
+    test_a = requests.put(
+        f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
+        headers=headers,
+        json={**payload, "emails": [{"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL, "content": "<p>Hello</p>"}]},
+        timeout=30,
+    )
+    log(f"Test A (minimal HTML): {test_a.status_code}")
+
+    # Test B: full HTML but ASCII-only preheader
+    ascii_preheader = PREHEADER.encode('ascii', errors='replace').decode('ascii')
+    email_b = {**email_obj, "preheader_text": ascii_preheader}
+    test_b = requests.put(
+        f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
+        headers=headers,
+        json={**payload, "emails": [email_b]},
+        timeout=30,
+    )
+    log(f"Test B (ASCII preheader): {test_b.status_code} | {test_b.text[:200]}")
+
+    # Test C: full payload as-is
     update_r = requests.put(
         f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
         headers=headers,
