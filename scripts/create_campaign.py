@@ -427,52 +427,30 @@ def create_campaign(html: str) -> str:
     email_obj["content"] = sanitized_content
     log(f"Sanitized content length: {len(sanitized_content)}")
 
-    # Binary search narrowed to first 25%
-    log("Narrowing binary search in first 25%...")
-    html_len = len(sanitized_content)
-    for fraction in [0.05, 0.10, 0.15, 0.20, 0.25]:
-        chunk = sanitized_content[:int(html_len * fraction)]
-        chunk_r = requests.put(
-            f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
-            headers=headers,
-            data=json.dumps({
-                "name":        safe_name,
-                "language_id": 4,
-                "type":        "regular",
-                "emails":      [{**email_obj, "content": chunk}],
-                "groups":      [MAILERLITE_GROUP_ID],
-            }),
-            timeout=30,
-        )
-        log(f"Chunk {fraction*100:.0f}% ({len(chunk)} chars): {chunk_r.status_code}")
-        if not chunk_r.ok:
-            log(f"  First failure at {fraction*100:.0f}%")
-            log(f"  Last 200 chars of chunk: {chunk[-200:]!r}")
-            break
+    # Use our own clean HTML template (not source campaign's rendered HTML)
+    # Source campaign HTML contains MailerLite template variables that get rejected
+    log(f"Using clean HTML template: {len(html)} chars")
+    log(f"First 100 chars: {html[:100]!r}")
 
-    # Try stripping all <style> blocks from content
-    import re as re2
-    stripped = re2.sub(r'<style[^>]*>.*?</style>', '', sanitized_content, flags=re2.DOTALL)
-    log(f"Stripped content length: {len(stripped)}")
-    stripped_r = requests.put(
+    email_obj = {"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL, "content": html}
+    if PREHEADER:
+        email_obj["preheader_text"] = PREHEADER
+
+    update_r = requests.put(
         f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
         headers=headers,
         data=json.dumps({
             "name":        safe_name,
             "language_id": 4,
             "type":        "regular",
-            "emails":      [{**email_obj, "content": stripped}],
+            "emails":      [email_obj],
             "groups":      [MAILERLITE_GROUP_ID],
         }),
         timeout=30,
     )
-    log(f"Stripped (no style tags): {stripped_r.status_code} | {stripped_r.text[:150]}")
-    if stripped_r.ok:
-        log("✅ Works without style tags — style block contains the bad character!")
-        email_obj["content"] = stripped
-        update_r = stripped_r
-    else:
-        update_r = stripped_r
+    log(f"Content update: {update_r.status_code} | {update_r.text[:200]}")
+    if update_r.ok:
+        log("✅ Full content updated successfully!")
 
     if not update_r.ok:
         log("⚠️  Content update failed — falling back to source copy")
@@ -518,3 +496,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
