@@ -400,7 +400,8 @@ def create_campaign(html: str) -> str:
         log(f"Shell created — ID: {shell_id}")
 
         # Multiple warmup PUTs with escalating content (mirrors the working binary search pattern)
-        ascii_subject = SUBJECT.encode('ascii', errors='replace').decode('ascii')
+        ascii_subject = SUBJECT.encode('ascii', 'xmlcharrefreplace').decode('ascii')
+        ascii_name    = safe_name.encode('ascii', 'xmlcharrefreplace').decode('ascii')
         warmup_sizes = [100, 500, 1000, 2000, 4000, 8000, 12000, 16000]
         for size in warmup_sizes:
             chunk = html[:size]
@@ -408,7 +409,7 @@ def create_campaign(html: str) -> str:
                 f"https://connect.mailerlite.com/api/campaigns/{shell_id}",
                 headers=headers,
                 json={
-                    "name":        safe_name + " [content]",
+                    "name":        ascii_name + " [content]",
                     "language_id": 4,
                     "type":        "regular",
                     "emails":      [{"subject": ascii_subject, "from_name": FROM_NAME, "from": FROM_EMAIL, "content": chunk}],
@@ -421,14 +422,18 @@ def create_campaign(html: str) -> str:
                 break
         log(f"Warmup complete (last status: {wu_r.status_code})")
 
+        def to_ascii(s):
+            return s.encode('ascii', 'xmlcharrefreplace').decode('ascii')
+
         email_obj = {
-            "subject":   SUBJECT,
+            "subject":   to_ascii(SUBJECT),
             "from_name": FROM_NAME,
             "from":      FROM_EMAIL,
-            "content":   html,
+            "content":   sanitized_html,
         }
         if PREHEADER:
-            email_obj["preheader_text"] = PREHEADER
+            email_obj["preheader_text"] = to_ascii(PREHEADER)
+        log(f"Subject after sanitize: {email_obj['subject']}")
 
         # Find all non-ASCII characters in HTML
         non_ascii = [(i, c, ord(c)) for i, c in enumerate(html) if ord(c) > 127]
@@ -446,7 +451,7 @@ def create_campaign(html: str) -> str:
             f"https://connect.mailerlite.com/api/campaigns/{shell_id}",
             headers=headers,
             json={
-                "name":        safe_name + " [content]",
+                "name":        ascii_name + " [content]",
                 "language_id": 4,
                 "type":        "regular",
                 "emails":      [email_obj],
