@@ -397,10 +397,35 @@ def create_campaign(html: str) -> str:
     email_id    = shell_r.json()["data"]["emails"][0]["id"]
     log(f"Shell created — ID: {campaign_id}")
 
-    # Step 4 — Immediately push content (no sleep — matches the one successful run)
+    # TEST: Send simple content first to confirm API works
+    # MailerLite support confirmed the issue is with HTML escaping, not API format
+    test_obj = {"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL, "content": "Test"}
+    test_r = requests.put(
+        f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
+        headers=headers,
+        data=json.dumps({
+            "name":        safe_name,
+            "language_id": 4,
+            "type":        "regular",
+            "emails":      [test_obj],
+            "groups":      [MAILERLITE_GROUP_ID],
+        }),
+        timeout=30,
+    )
+    log(f"Test content update: {test_r.status_code} | {test_r.text[:200]}")
+
+    # Now try with actual HTML content
     email_obj = {"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL, "content": new_content}
     if PREHEADER:
         email_obj["preheader_text"] = PREHEADER
+
+    # Sanitize content - ensure proper encoding
+    # Remove any null bytes or control characters that break JSON
+    import unicodedata
+    sanitized_content = new_content.encode('utf-8', errors='replace').decode('utf-8')
+    sanitized_content = ''.join(c for c in sanitized_content if unicodedata.category(c) != 'Cc' or c in '\n\r\t')
+    email_obj["content"] = sanitized_content
+    log(f"Sanitized content length: {len(sanitized_content)}")
 
     update_payload = json.dumps({
         "name":        safe_name,
