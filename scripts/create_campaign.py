@@ -339,7 +339,7 @@ def create_campaign(html: str) -> str:
         "Content-Type":  "application/json",
         "Accept":        "application/json",
     }
-    SOURCE_CAMPAIGN_ID = "187208314057131562"
+    SOURCE_CAMPAIGN_ID = "187192384028673903"
 
     def to_ascii(s):
         return s.encode('ascii', 'xmlcharrefreplace').decode('ascii')
