@@ -341,13 +341,51 @@ def create_campaign(html: str) -> str:
     }
     SOURCE_CAMPAIGN_ID = "186652362153133094"
 
-    # Step 1 — Create regular campaign shell (no content)
-    log("Creating campaign shell...")
+    # Step 1 — Copy source campaign (builder-editable, resend configured)
+    log("Copying source campaign...")
+    copy_r = requests.post(
+        f"https://connect.mailerlite.com/api/campaigns/{SOURCE_CAMPAIGN_ID}/copy",
+        headers=headers, timeout=30,
+    )
+    if not copy_r.ok:
+        raise RuntimeError(f"Copy failed: {copy_r.status_code} {copy_r.text}")
+    campaign_id = copy_r.json()["data"]["id"]
+    email_id    = copy_r.json()["data"]["emails"][0]["id"]
+    log(f"Copied — campaign: {campaign_id}")
+
+    # Step 2 — Rename the copy with correct subject
+    email_meta = {"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL}
+    if PREHEADER:
+        email_meta["preheader_text"] = PREHEADER
+
+    rename_r = requests.put(
+        f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
+        headers=headers,
+        json={
+            "name":            safe_name,
+            "language_id":     4,
+            "type":            "resend",
+            "emails":          [email_meta],
+            "groups":          [MAILERLITE_GROUP_ID],
+            "resend_settings": {
+                "test_type":         "subject",
+                "select_winner_by":  "c",
+                "b_value":           {"subject": SUBJECT},
+                "resend_delay":      24,
+                "resend_delay_type": "hours",
+            },
+        },
+        timeout=30,
+    )
+    log(f"Rename: {rename_r.status_code}")
+
+    # Step 3 — Create regular shell and push content (proven working approach)
+    log("Creating content shell...")
     shell_r = requests.post(
         "https://connect.mailerlite.com/api/campaigns",
         headers=headers,
         json={
-            "name":        safe_name,
+            "name":        safe_name + " [content]",
             "language_id": 4,
             "type":        "regular",
             "emails":      [{"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL}],
@@ -356,60 +394,43 @@ def create_campaign(html: str) -> str:
         timeout=30,
     )
     if not shell_r.ok:
-        raise RuntimeError(f"Shell failed: {shell_r.status_code} {shell_r.text}")
+        log(f"⚠️  Shell failed: {shell_r.text[:200]}")
+    else:
+        shell_id = shell_r.json()["data"]["id"]
+        log(f"Shell created — ID: {shell_id}")
 
-    campaign_id = shell_r.json()["data"]["id"]
-    email_id    = shell_r.json()["data"]["emails"][0]["id"]
-    log(f"Shell created — ID: {campaign_id}")
+        email_obj = {"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL, "content": html}
+        if PREHEADER:
+            email_obj["preheader_text"] = PREHEADER
 
-    # Step 2 — Push our clean HTML template as content
-    log(f"Pushing clean HTML ({len(html)} chars)...")
-    email_obj = {"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL, "content": html}
-    if PREHEADER:
-        email_obj["preheader_text"] = PREHEADER
-
-    payload = {
-        "name":        safe_name,
-        "language_id": 4,
-        "type":        "regular",
-        "emails":      [email_obj],
-        "groups":      [MAILERLITE_GROUP_ID],
-    }
-
-    update_r = requests.put(
-        f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
-        headers=headers,
-        json={
-            "name":        safe_name,
-            "language_id": 4,
-            "type":        "regular",
-            "emails":      [email_obj],
-            "groups":      [MAILERLITE_GROUP_ID],
-        },
-        timeout=30,
-    )
-    log(f"Content update: {update_r.status_code} | {update_r.text[:200]}")
-    if update_r.ok:
-        log("✅ Full content updated successfully!")
-    log(f"Content update: {update_r.status_code} | {update_r.text[:200]}")
-    if update_r.ok:
-        log("✅ Full content updated successfully!")
-
-    if not update_r.ok:
-        log("⚠️  Content update failed — falling back to source copy")
-        requests.delete(f"https://connect.mailerlite.com/api/campaigns/{campaign_id}", headers=headers, timeout=30)
-        copy_r = requests.post(
-            f"https://connect.mailerlite.com/api/campaigns/{SOURCE_CAMPAIGN_ID}/copy",
-            headers=headers, timeout=30,
+        content_r = requests.put(
+            f"https://connect.mailerlite.com/api/campaigns/{shell_id}",
+            headers=headers,
+            json={
+                "name":        safe_name + " [content]",
+                "language_id": 4,
+                "type":        "regular",
+                "emails":      [email_obj],
+                "groups":      [MAILERLITE_GROUP_ID],
+            },
+            timeout=30,
         )
-        if not copy_r.ok:
-            raise RuntimeError(f"Copy failed: {copy_r.status_code} {copy_r.text}")
-        campaign_id = copy_r.json()["data"]["id"]
-        email_id    = copy_r.json()["data"]["emails"][0]["id"]
-        log(f"Fallback copy — ID: {campaign_id}")
-        log(f"📋 Update manually: Thumbnail, YouTube URL, Blog URL, Body copy")
+        log(f"Content shell update: {content_r.status_code}")
+        if content_r.ok:
+            log("✅ Content shell ready — review at: "
+                f"https://dashboard.mailerlite.com/campaigns/{shell_id}/step-content")
+        else:
+            log(f"⚠️  Content push failed: {content_r.text[:200]}")
 
-    log(f"✅ Draft ready — ID: {campaign_id} | Email ID: {email_id}")
+        # Delete the temp shell after content manager has copied what they need
+        # (we leave it for now — content manager can reference it)
+
+    log(f"✅ Builder-editable draft ready — ID: {campaign_id}")
+    log(f"📋 Use content shell for reference, update builder draft manually:")
+    log(f"   Thumbnail: {IMAGE_URL}")
+    log(f"   YouTube:   {YOUTUBE_URL}")
+    log(f"   Blog URL:  {BLOG_URL}")
+    log(f"   Body copy: {BODY_COPY[:80]}...")
     return campaign_id, email_id
 
 def main():
