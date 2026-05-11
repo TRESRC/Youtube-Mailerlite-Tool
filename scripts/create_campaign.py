@@ -15,6 +15,7 @@ MAILERLITE_API_KEY  = os.environ["MAILERLITE_API_KEY"]
 MAILERLITE_GROUP_ID = os.environ["MAILERLITE_GROUP_ID"]
 FROM_NAME           = "TheREsource.tv"
 FROM_EMAIL          = "theguys@theresource.tv"
+UNSUBSCRIBE_URL     = "https://theresource.tv/unsubscribe"
 
 # ── Content from workflow inputs (passed by the web tool) ─────────────────────
 SUBJECT     = os.environ["INPUT_SUBJECT"]
@@ -99,7 +100,7 @@ img{{border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;}
     <tr><td colspan="2" height="20"></td></tr>
     <tr>
       <td align="left" style="font-family:'Montserrat',sans-serif;color:#111111;font-size:12px;line-height:18px;">{PREHEADER}</td>
-      <td align="right" style="font-family:'Montserrat',sans-serif;color:#111111;font-size:12px;line-height:18px;"><a href="{{$url}}" style="color:#111111;">View in browser</a></td>
+      <td align="right" style="font-family:'Montserrat',sans-serif;color:#111111;font-size:12px;line-height:18px;"><a href="https://theresource.tv" style="color:#111111;">View in browser</a></td>
     </tr>
     <tr><td colspan="2" height="20"></td></tr>
   </table>
@@ -303,7 +304,7 @@ img{{border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;}
               </td></tr>
               <tr><td height="10"></td></tr>
               <tr><td align="right" style="font-family:'Montserrat',sans-serif;font-size:12px;line-height:150%;color:#111111;">
-                <a href="{{$unsubscribe}}" style="color:#111111;text-decoration:underline;">Unsubscribe</a>
+                <a href="{UNSUBSCRIBE_URL}" style="color:#111111;text-decoration:underline;">Unsubscribe</a>
               </td></tr>
             </table>
           </td></tr>
