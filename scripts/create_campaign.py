@@ -337,13 +337,13 @@ def create_campaign(html: str) -> str:
     shell_r = requests.post(
         "https://connect.mailerlite.com/api/campaigns",
         headers=headers,
-        data=json.dumps({
+        json={
             "name":        safe_name,
             "language_id": 4,
             "type":        "regular",
             "emails":      [{"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL}],
             "groups":      [MAILERLITE_GROUP_ID],
-        }),
+        },
         timeout=30,
     )
     if not shell_r.ok:
@@ -362,13 +362,13 @@ def create_campaign(html: str) -> str:
     update_r = requests.put(
         f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
         headers=headers,
-        data=json.dumps({
+        json={
             "name":        safe_name,
             "language_id": 4,
             "type":        "regular",
             "emails":      [email_obj],
             "groups":      [MAILERLITE_GROUP_ID],
-        }),
+        },
         timeout=30,
     )
     log(f"Content update: {update_r.status_code} | {update_r.text[:200]}")
