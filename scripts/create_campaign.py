@@ -414,7 +414,7 @@ def create_campaign(html: str) -> str:
     # Step 4 — Warmup PUTs (MailerLite requires prior PUT before accepting full HTML)
     log("Starting warmup PUTs...")
     warmup_ok = True
-    for size in [100, 500, 1000, 2000, 4000, 8000, 12000, 16000]:
+    for size in [100, 500, 1000, 2000, 4000, 8000, 12000, 16000, 18000, 20000, len(safe_html) - 100, len(safe_html)]:
         wu = requests.put(
             f"https://connect.mailerlite.com/api/campaigns/{shell_id}",
             headers=headers,
