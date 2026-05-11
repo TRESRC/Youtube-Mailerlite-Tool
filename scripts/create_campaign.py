@@ -399,20 +399,26 @@ def create_campaign(html: str) -> str:
         shell_id = shell_r.json()["data"]["id"]
         log(f"Shell created — ID: {shell_id}")
 
-        # Warmup PUT with minimal content (primes the campaign for full content)
-        requests.put(
-            f"https://connect.mailerlite.com/api/campaigns/{shell_id}",
-            headers=headers,
-            json={
-                "name":        safe_name + " [content]",
-                "language_id": 4,
-                "type":        "regular",
-                "emails":      [{"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL, "content": "<p>Loading...</p>"}],
-                "groups":      [MAILERLITE_GROUP_ID],
-            },
-            timeout=30,
-        )
-        log("Warmup PUT done")
+        # Multiple warmup PUTs with escalating content (mirrors the working binary search pattern)
+        warmup_sizes = [100, 500, 1000, 2000, 4000, 8000, 12000, 16000]
+        for size in warmup_sizes:
+            chunk = html[:size]
+            wu_r = requests.put(
+                f"https://connect.mailerlite.com/api/campaigns/{shell_id}",
+                headers=headers,
+                json={
+                    "name":        safe_name + " [content]",
+                    "language_id": 4,
+                    "type":        "regular",
+                    "emails":      [{"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL, "content": chunk}],
+                    "groups":      [MAILERLITE_GROUP_ID],
+                },
+                timeout=30,
+            )
+            if not wu_r.ok:
+                log(f"Warmup {size} failed: {wu_r.text[:100]}")
+                break
+        log(f"Warmup complete (last status: {wu_r.status_code})")
 
         email_obj = {"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL, "content": html}
         if PREHEADER:
