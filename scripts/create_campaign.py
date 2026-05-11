@@ -369,65 +369,11 @@ def create_campaign(html: str) -> str:
     campaign_id = copy_r.json()["data"]["id"]
     email_id    = copy_r.json()["data"]["emails"][0]["id"]
     log(f"Copied — campaign: {campaign_id}")
+    log(f"All email IDs: {[e['id'] for e in copy_r.json()['data']['emails']]}")
+    log(f"Campaign type: {copy_r.json()['data']['type']}")
+    log(f"Settings: {json.dumps(copy_r.json()['data'].get('settings', {}))}")
 
-    # Step 2 — Create regular shell and push full content (warmup required)
-    log("Creating content shell...")
-    shell_r = requests.post(
-        "https://connect.mailerlite.com/api/campaigns",
-        headers=headers,
-        json={
-            "name":        safe_campaign_name + " [content]",
-            "language_id": 4,
-            "type":        "regular",
-            "emails":      [{"subject": safe_subject, "from_name": FROM_NAME, "from": FROM_EMAIL}],
-            "groups":      [MAILERLITE_GROUP_ID],
-        },
-        timeout=30,
-    )
-    if not shell_r.ok:
-        raise RuntimeError(f"Shell failed: {shell_r.status_code} {shell_r.text}")
-
-    shell_id = shell_r.json()["data"]["id"]
-    log(f"Shell created — ID: {shell_id}")
-
-    # Warmup PUTs — required before MailerLite accepts full HTML content
-    for size in [100, 500, 1000, 2000, 4000, 8000, 12000, 16000, 18000, 20000, len(safe_html) - 100, len(safe_html)]:
-        wu = requests.put(
-            f"https://connect.mailerlite.com/api/campaigns/{shell_id}",
-            headers=headers,
-            json={
-                "name":        safe_campaign_name + " [content]",
-                "language_id": 4,
-                "type":        "regular",
-                "emails":      [{"subject": safe_subject, "from_name": FROM_NAME, "from": FROM_EMAIL,
-                                 "content": safe_html[:size]}],
-                "groups":      [MAILERLITE_GROUP_ID],
-            },
-            timeout=30,
-        )
-        if not wu.ok:
-            log(f"Warmup {size} failed — continuing anyway")
-            break
-
-    # Push full content (no preheader_text field — it breaks the API when combined with full HTML)
-    content_r = requests.put(
-        f"https://connect.mailerlite.com/api/campaigns/{shell_id}",
-        headers=headers,
-        json={
-            "name":        safe_campaign_name + " [content]",
-            "language_id": 4,
-            "type":        "regular",
-            "emails":      [{"subject": safe_subject, "from_name": FROM_NAME, "from": FROM_EMAIL,
-                             "content": safe_html}],
-            "groups":      [MAILERLITE_GROUP_ID],
-        },
-        timeout=30,
-    )
-    log(f"Content shell: {content_r.status_code}")
-    if content_r.ok:
-        log(f"✅ Content at: https://dashboard.mailerlite.com/campaigns/{shell_id}/step-content")
-
-    # Step 3 — Rename resend copy with correct subject (single email object)
+    # Step 2 — Rename with correct subject and resend settings
     rename_r = requests.put(
         f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
         headers=headers,
@@ -441,12 +387,20 @@ def create_campaign(html: str) -> str:
         },
         timeout=30,
     )
-    log(f"Rename resend: {rename_r.status_code} | {rename_r.text[:200]}")
+    log(f"Rename: {rename_r.status_code}")
 
-    # Step 4 — Try warmup trick on resend campaign to push content
-    log("Trying warmup content push on resend campaign...")
-    for size in [100, 500, 1000, 2000, 4000, 8000, 12000, 16000, 18000, 20000, len(safe_html)]:
-        wu = requests.put(
+    # Step 3 — Push content via escalating PUT calls (warmup required by MailerLite API)
+    # The API requires prior PUTs before accepting full HTML on resend campaigns
+    log("Pushing content to resend campaign...")
+    sizes = [100, 500, 1000, 2000, 4000, 8000, 12000, 16000, 18000, 20000]
+    # Add full content as final step
+    if len(safe_html) not in sizes:
+        sizes.append(len(safe_html))
+
+    last_status = None
+    for size in sizes:
+        chunk = safe_html[:size]
+        r = requests.put(
             f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
             headers=headers,
             json={
@@ -454,20 +408,25 @@ def create_campaign(html: str) -> str:
                 "language_id":     4,
                 "type":            "resend",
                 "emails":          [{"subject": safe_subject, "from_name": FROM_NAME, "from": FROM_EMAIL,
-                                     "content": safe_html[:size]}],
+                                     "content": chunk}],
                 "groups":          [MAILERLITE_GROUP_ID],
                 "resend_settings": resend_cfg,
             },
             timeout=30,
         )
-        log(f"  Resend warmup {size}: {wu.status_code} | {wu.text[:80]}")
-        if wu.ok:
-            log(f"  ✅ Resend accepted content at {size} chars!")
-        else:
+        last_status = r.status_code
+        if not r.ok:
+            log(f"Content push failed at {size} chars: {r.text[:150]}")
             break
 
-    log(f"✅ Draft ready — resend: {campaign_id} | content ref: {shell_id}")
+    if last_status == 200:
+        log("✅ Full content pushed to resend campaign!")
+    else:
+        log(f"⚠️  Content push ended with status {last_status}")
+
+    log(f"✅ Draft ready — ID: {campaign_id}")
     return campaign_id, email_id
+
 
 def main():
     log("🚀 Campaign Creator starting")
