@@ -446,6 +446,10 @@ def create_campaign(html: str) -> str:
     log(f"✅ Draft ready — resend: {campaign_id} | content ref: {shell_id}")
     return campaign_id, email_id
 
+def main():
+    log("🚀 Campaign Creator starting")
+    log(f"   Subject: {SUBJECT}")
+
     html = build_html()
     log(f"   HTML length: {len(html)} chars")
 
