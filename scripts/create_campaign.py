@@ -376,33 +376,28 @@ def create_campaign(html: str) -> str:
         "groups":      [MAILERLITE_GROUP_ID],
     }
 
-    # Test A: minimal HTML
-    test_a = requests.put(
-        f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
-        headers=headers,
-        json={**payload, "emails": [{"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL, "content": "<p>Hello</p>"}]},
-        timeout=30,
-    )
-    log(f"Test A (minimal HTML): {test_a.status_code}")
+    # Test A confirmed minimal HTML works - now binary search our HTML
+    log("Binary searching HTML content...")
+    lo, hi = 0, len(html)
+    last_ok = 0
+    for size in [100, 500, 1000, 2000, 4000, 8000, 12000, 16000, 18000, 19000, 20000, len(html)]:
+        chunk = html[:size]
+        r = requests.put(
+            f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
+            headers=headers,
+            json={**{"name": safe_name, "language_id": 4, "type": "regular", "groups": [MAILERLITE_GROUP_ID]},
+                  "emails": [{"subject": SUBJECT, "from_name": FROM_NAME, "from": FROM_EMAIL, "content": chunk}]},
+            timeout=30,
+        )
+        log(f"  {size} chars: {r.status_code}")
+        if r.ok:
+            last_ok = size
+        else:
+            log(f"  BREAKS between {last_ok} and {size} chars")
+            log(f"  Content at break point: {html[last_ok:last_ok+200]!r}")
+            break
 
-    # Test B: full HTML but ASCII-only preheader
-    ascii_preheader = PREHEADER.encode('ascii', errors='replace').decode('ascii')
-    email_b = {**email_obj, "preheader_text": ascii_preheader}
-    test_b = requests.put(
-        f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
-        headers=headers,
-        json={**payload, "emails": [email_b]},
-        timeout=30,
-    )
-    log(f"Test B (ASCII preheader): {test_b.status_code} | {test_b.text[:200]}")
-
-    # Test C: full payload as-is
-    update_r = requests.put(
-        f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
-        headers=headers,
-        json=payload,
-        timeout=30,
-    )
+    update_r = r
     log(f"Content update: {update_r.status_code} | {update_r.text[:200]}")
     if update_r.ok:
         log("✅ Full content updated successfully!")
