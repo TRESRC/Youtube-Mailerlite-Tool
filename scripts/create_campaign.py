@@ -412,6 +412,8 @@ def create_campaign(html: str) -> str:
     log(f"Shell created — ID: {shell_id}")
 
     # Step 4 — Warmup PUTs (MailerLite requires prior PUT before accepting full HTML)
+    log("Starting warmup PUTs...")
+    warmup_ok = True
     for size in [100, 500, 1000, 2000, 4000, 8000, 12000, 16000]:
         wu = requests.put(
             f"https://connect.mailerlite.com/api/campaigns/{shell_id}",
@@ -426,9 +428,12 @@ def create_campaign(html: str) -> str:
             },
             timeout=30,
         )
+        log(f"  Warmup {size}: {wu.status_code}")
         if not wu.ok:
-            log(f"Warmup {size} failed: {wu.text[:100]}")
+            log(f"  Warmup {size} failed: {wu.text[:150]}")
+            warmup_ok = False
             break
+    log(f"Warmup complete — ok: {warmup_ok}")
 
     # Step 5 — Push full sanitized HTML content
     email_obj = {"subject": safe_subject, "from_name": FROM_NAME, "from": FROM_EMAIL, "content": safe_html}
