@@ -427,13 +427,11 @@ def create_campaign(html: str) -> str:
     email_obj["content"] = sanitized_content
     log(f"Sanitized content length: {len(sanitized_content)}")
 
-    # Binary search to find which part of HTML breaks the API
-    # MailerLite confirmed issue is with the HTML content itself
-    log("Binary searching HTML to find breaking section...")
+    # Binary search narrowed to first 25%
+    log("Narrowing binary search in first 25%...")
     html_len = len(sanitized_content)
-    for fraction in [0.25, 0.5, 0.75, 1.0]:
+    for fraction in [0.05, 0.10, 0.15, 0.20, 0.25]:
         chunk = sanitized_content[:int(html_len * fraction)]
-        test_obj_chunk = {**email_obj, "content": chunk}
         chunk_r = requests.put(
             f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
             headers=headers,
@@ -441,34 +439,42 @@ def create_campaign(html: str) -> str:
                 "name":        safe_name,
                 "language_id": 4,
                 "type":        "regular",
-                "emails":      [test_obj_chunk],
+                "emails":      [{**email_obj, "content": chunk}],
                 "groups":      [MAILERLITE_GROUP_ID],
             }),
             timeout=30,
         )
         log(f"Chunk {fraction*100:.0f}% ({len(chunk)} chars): {chunk_r.status_code}")
         if not chunk_r.ok:
-            log(f"  Failed at {fraction*100:.0f}% — breaking char range: {int(html_len*(fraction-0.25))} to {int(html_len*fraction)}")
-            log(f"  Content around break: {sanitized_content[int(html_len*(fraction-0.1)):int(html_len*(fraction-0.1))+200]!r}")
+            log(f"  First failure at {fraction*100:.0f}%")
+            log(f"  Last 200 chars of chunk: {chunk[-200:]!r}")
             break
 
-    # Try full content now that we've identified the issue
-    update_r = requests.put(
+    # Try stripping all <style> blocks from content
+    import re as re2
+    stripped = re2.sub(r'<style[^>]*>.*?</style>', '', sanitized_content, flags=re2.DOTALL)
+    log(f"Stripped content length: {len(stripped)}")
+    stripped_r = requests.put(
         f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
         headers=headers,
         data=json.dumps({
             "name":        safe_name,
             "language_id": 4,
             "type":        "regular",
-            "emails":      [email_obj],
+            "emails":      [{**email_obj, "content": stripped}],
             "groups":      [MAILERLITE_GROUP_ID],
         }),
         timeout=30,
     )
-    log(f"Full content update: {update_r.status_code} | {update_r.text[:150]}")
-    if update_r.ok:
-        log("✅ Full content updated!")
+    log(f"Stripped (no style tags): {stripped_r.status_code} | {stripped_r.text[:150]}")
+    if stripped_r.ok:
+        log("✅ Works without style tags — style block contains the bad character!")
+        email_obj["content"] = stripped
+        update_r = stripped_r
     else:
+        update_r = stripped_r
+
+    if not update_r.ok:
         log("⚠️  Content update failed — falling back to source copy")
         requests.delete(f"https://connect.mailerlite.com/api/campaigns/{campaign_id}", headers=headers, timeout=30)
         copy_r = requests.post(
