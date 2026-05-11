@@ -342,13 +342,11 @@ def create_campaign(html: str) -> str:
     SOURCE_CAMPAIGN_ID = "186652362153133094"
 
     def to_ascii(s):
-        """Convert unicode chars to HTML entities so MailerLite API doesn't reject them."""
         return s.encode('ascii', 'xmlcharrefreplace').decode('ascii')
 
-    # Sanitize all text fields — unicode chars break MailerLite's JSON parser
-    safe_subject  = to_ascii(SUBJECT)
-    safe_preheader = to_ascii(PREHEADER) if PREHEADER else ""
-    safe_html     = html.encode('ascii', 'xmlcharrefreplace').decode('ascii')
+    safe_subject       = to_ascii(SUBJECT)
+    safe_preheader     = to_ascii(PREHEADER) if PREHEADER else ""
+    safe_html          = html.encode('ascii', 'xmlcharrefreplace').decode('ascii')
     safe_campaign_name = to_ascii(safe_name)
     log(f"HTML sanitized: {len(html)} → {len(safe_html)} chars")
 
@@ -372,24 +370,7 @@ def create_campaign(html: str) -> str:
     email_id    = copy_r.json()["data"]["emails"][0]["id"]
     log(f"Copied — campaign: {campaign_id}")
 
-    # Step 2 — Rename the copy with correct subject and resend settings
-    rename_r = requests.put(
-        f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
-        headers=headers,
-        json={
-            "name":            safe_campaign_name,
-            "language_id":     4,
-            "type":            "resend",
-            "emails":          [{"subject": safe_subject, "from_name": FROM_NAME, "from": FROM_EMAIL,
-                                 **({"preheader_text": safe_preheader} if safe_preheader else {})}],
-            "groups":          [MAILERLITE_GROUP_ID],
-            "resend_settings": resend_cfg,
-        },
-        timeout=30,
-    )
-    log(f"Rename: {rename_r.status_code}")
-
-    # Step 3 — Create regular shell for content (regular type accepts HTML content)
+    # Step 2 — Create regular shell and push full content (warmup required)
     log("Creating content shell...")
     shell_r = requests.post(
         "https://connect.mailerlite.com/api/campaigns",
@@ -404,16 +385,12 @@ def create_campaign(html: str) -> str:
         timeout=30,
     )
     if not shell_r.ok:
-        log(f"⚠️  Content shell failed: {shell_r.text[:200]}")
-        log(f"✅ Builder draft ready (no content shell) — ID: {campaign_id}")
-        return campaign_id, email_id
+        raise RuntimeError(f"Shell failed: {shell_r.status_code} {shell_r.text}")
 
     shell_id = shell_r.json()["data"]["id"]
     log(f"Shell created — ID: {shell_id}")
 
-    # Step 4 — Warmup PUTs (MailerLite requires prior PUT before accepting full HTML)
-    log("Starting warmup PUTs...")
-    warmup_ok = True
+    # Warmup PUTs — required before MailerLite accepts full HTML content
     for size in [100, 500, 1000, 2000, 4000, 8000, 12000, 16000, 18000, 20000, len(safe_html) - 100, len(safe_html)]:
         wu = requests.put(
             f"https://connect.mailerlite.com/api/campaigns/{shell_id}",
@@ -428,16 +405,11 @@ def create_campaign(html: str) -> str:
             },
             timeout=30,
         )
-        log(f"  Warmup {size}: {wu.status_code}")
         if not wu.ok:
-            log(f"  Warmup {size} failed: {wu.text[:150]}")
-            warmup_ok = False
+            log(f"Warmup {size} failed — continuing anyway")
             break
-    log(f"Warmup complete — ok: {warmup_ok}")
 
-    # Step 5 — Push full sanitized HTML content (no preheader_text - that field breaks the API)
-    email_obj = {"subject": safe_subject, "from_name": FROM_NAME, "from": FROM_EMAIL, "content": safe_html}
-
+    # Push full content (no preheader_text field — it breaks the API when combined with full HTML)
     content_r = requests.put(
         f"https://connect.mailerlite.com/api/campaigns/{shell_id}",
         headers=headers,
@@ -445,23 +417,34 @@ def create_campaign(html: str) -> str:
             "name":        safe_campaign_name + " [content]",
             "language_id": 4,
             "type":        "regular",
-            "emails":      [email_obj],
+            "emails":      [{"subject": safe_subject, "from_name": FROM_NAME, "from": FROM_EMAIL,
+                             "content": safe_html}],
             "groups":      [MAILERLITE_GROUP_ID],
         },
         timeout=30,
     )
-    log(f"Content shell update: {content_r.status_code}")
+    log(f"Content shell: {content_r.status_code}")
     if content_r.ok:
-        log(f"✅ Content shell ready — https://dashboard.mailerlite.com/campaigns/{shell_id}/step-content")
-    else:
-        log(f"⚠️  Content push failed: {content_r.text[:200]}")
+        log(f"✅ Content at: https://dashboard.mailerlite.com/campaigns/{shell_id}/step-content")
 
-    log(f"✅ Draft ready — builder: {campaign_id} | content: {shell_id}")
+    # Step 3 — Rename resend copy with correct subject
+    rename_r = requests.put(
+        f"https://connect.mailerlite.com/api/campaigns/{campaign_id}",
+        headers=headers,
+        json={
+            "name":            safe_campaign_name,
+            "language_id":     4,
+            "type":            "resend",
+            "emails":          [{"subject": safe_subject, "from_name": FROM_NAME, "from": FROM_EMAIL}],
+            "groups":          [MAILERLITE_GROUP_ID],
+            "resend_settings": resend_cfg,
+        },
+        timeout=30,
+    )
+    log(f"Rename resend: {rename_r.status_code} | {rename_r.text[:200]}")
+
+    log(f"✅ Draft ready — resend: {campaign_id} | content ref: {shell_id}")
     return campaign_id, email_id
-
-def main():
-    log("🚀 Campaign Creator starting")
-    log(f"   Subject: {SUBJECT}")
 
     html = build_html()
     log(f"   HTML length: {len(html)} chars")
