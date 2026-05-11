@@ -435,10 +435,8 @@ def create_campaign(html: str) -> str:
             break
     log(f"Warmup complete — ok: {warmup_ok}")
 
-    # Step 5 — Push full sanitized HTML content
+    # Step 5 — Push full sanitized HTML content (no preheader_text - that field breaks the API)
     email_obj = {"subject": safe_subject, "from_name": FROM_NAME, "from": FROM_EMAIL, "content": safe_html}
-    if safe_preheader:
-        email_obj["preheader_text"] = safe_preheader
 
     content_r = requests.put(
         f"https://connect.mailerlite.com/api/campaigns/{shell_id}",
