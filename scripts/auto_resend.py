@@ -76,7 +76,7 @@ def get_non_openers(campaign_id):
     non_openers = []
     cursor = None
     while True:
-        params = {"filter[type]": "unopened", "limit": 1000}
+        params = {"filter[type]": "unopened", "limit": 100}
         if cursor:
             params["cursor"] = cursor
         r = requests.get(
