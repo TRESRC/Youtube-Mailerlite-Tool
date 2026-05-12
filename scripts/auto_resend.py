@@ -71,6 +71,33 @@ def already_resent(campaign_name):
                 return True
     return False
 
+def get_non_openers(campaign_id):
+    """Fetch all subscribers who did not open the campaign."""
+    non_openers = []
+    cursor = None
+    while True:
+        params = {"filter[type]": "unopened", "limit": 1000}
+        if cursor:
+            params["cursor"] = cursor
+        r = requests.get(
+            f"https://connect.mailerlite.com/api/campaigns/{campaign_id}/reports/subscriber-activity",
+            headers=headers,
+            params=params,
+            timeout=30,
+        )
+        if not r.ok:
+            log(f"⚠️  Failed to fetch non-openers: {r.text[:200]}")
+            break
+        data = r.json()
+        batch = data.get("data", [])
+        non_openers.extend([s["subscriber"]["id"] for s in batch if s.get("subscriber")])
+        # Pagination
+        next_cursor = data.get("meta", {}).get("next_cursor") or data.get("links", {}).get("next")
+        if not next_cursor or not batch:
+            break
+        cursor = next_cursor
+    return non_openers
+
 def create_resend(campaign):
     """Clone a sent campaign and send to non-openers."""
     campaign_id   = campaign["id"]
@@ -79,39 +106,40 @@ def create_resend(campaign):
     from_name     = campaign["emails"][0].get("from_name", "TheREsource.tv")
     from_email    = campaign["emails"][0].get("from", "theguys@theresource.tv")
 
-    # New subject with personalization
     resend_subject = f"{{$name}}, {original_subj}"
     resend_name    = f"{original_name} [resend]"
 
     log(f"Creating resend for: {original_name}")
     log(f"Resend subject: {resend_subject}")
 
-    # Step 1 — Copy the sent campaign
+    # Step 1 — Fetch non-openers
+    log("Fetching non-openers...")
+    non_openers = get_non_openers(campaign_id)
+    log(f"Non-openers: {len(non_openers)}")
+    if not non_openers:
+        log("No non-openers found — skipping resend")
+        return False
+
+    # Step 2 — Copy the sent campaign
     copy_r = requests.post(
         f"https://connect.mailerlite.com/api/campaigns/{campaign_id}/copy",
-        headers=headers,
-        timeout=30,
+        headers=headers, timeout=30,
     )
     if not copy_r.ok:
         log(f"⚠️  Copy failed: {copy_r.status_code} {copy_r.text[:200]}")
         return False
 
-    new_id       = copy_r.json()["data"]["id"]
-    new_type     = copy_r.json()["data"]["type"]
-    new_email_id = copy_r.json()["data"]["emails"][0]["id"]
+    new_id   = copy_r.json()["data"]["id"]
+    new_type = copy_r.json()["data"]["type"]
     log(f"Cloned — new campaign ID: {new_id} | type: {new_type}")
 
-    # Step 2 — Update name, subject, and filter to non-openers of original
-    # Build payload based on cloned campaign type
+    # Step 3 — Update name and subject
     update_payload = {
         "name":        resend_name,
         "language_id": 4,
         "type":        new_type,
         "emails":      [{"subject": resend_subject, "from_name": from_name, "from": from_email}],
-        "filter":      [[{"operator": "not_opened", "args": ["campaign", campaign_id]}]],
     }
-
-    # Resend type requires resend_settings
     if new_type == "resend":
         update_payload["resend_settings"] = {
             "test_type":         "subject",
@@ -127,18 +155,17 @@ def create_resend(campaign):
         json=update_payload,
         timeout=30,
     )
-    log(f"Update: {update_r.status_code} | {update_r.text[:200]}")
-
+    log(f"Update: {update_r.status_code} | {update_r.text[:150]}")
     if not update_r.ok:
-        log(f"⚠️  Update failed")
+        log("⚠️  Update failed")
         return False
 
-    # Step 3 — Schedule/send (skip in dry run mode)
+    # Step 4 — Send/schedule
     if DRY_RUN:
-        log(f"🧪 DRY RUN — would send resend campaign now (ID: {new_id})")
+        log(f"🧪 DRY RUN — would send to {len(non_openers)} non-openers")
         log(f"   Subject: {resend_subject}")
-        log(f"   Filter: non-openers of campaign {campaign_id}")
-        log(f"   To actually send, run with DRY_RUN=false")
+        log(f"   First 5 subscriber IDs: {non_openers[:5]}")
+        log(f"   Run with DRY_RUN=false to actually send")
         return True
 
     send_r = requests.post(
@@ -148,9 +175,8 @@ def create_resend(campaign):
         timeout=30,
     )
     log(f"Send: {send_r.status_code} | {send_r.text[:200]}")
-
     if send_r.ok:
-        log(f"✅ Resend sent! Campaign ID: {new_id}")
+        log(f"✅ Resend sent to {len(non_openers)} non-openers! Campaign ID: {new_id}")
         return True
     else:
         log(f"⚠️  Send failed: {send_r.text[:200]}")
