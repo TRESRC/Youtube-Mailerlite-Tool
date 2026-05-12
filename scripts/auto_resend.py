@@ -96,27 +96,35 @@ def create_resend(campaign):
         log(f"⚠️  Copy failed: {copy_r.status_code} {copy_r.text[:200]}")
         return False
 
-    new_id      = copy_r.json()["data"]["id"]
+    new_id       = copy_r.json()["data"]["id"]
+    new_type     = copy_r.json()["data"]["type"]
     new_email_id = copy_r.json()["data"]["emails"][0]["id"]
-    log(f"Cloned — new campaign ID: {new_id}")
+    log(f"Cloned — new campaign ID: {new_id} | type: {new_type}")
 
     # Step 2 — Update name, subject, and filter to non-openers of original
+    # Build payload based on cloned campaign type
+    update_payload = {
+        "name":        resend_name,
+        "language_id": 4,
+        "type":        new_type,
+        "emails":      [{"subject": resend_subject, "from_name": from_name, "from": from_email}],
+        "filter":      [[{"operator": "not_opened", "args": ["campaign", campaign_id]}]],
+    }
+
+    # Resend type requires resend_settings
+    if new_type == "resend":
+        update_payload["resend_settings"] = {
+            "test_type":         "subject",
+            "select_winner_by":  "c",
+            "b_value":           {"subject": resend_subject},
+            "resend_delay":      24,
+            "resend_delay_type": "hours",
+        }
+
     update_r = requests.put(
         f"https://connect.mailerlite.com/api/campaigns/{new_id}",
         headers=headers,
-        json={
-            "name":        resend_name,
-            "language_id": 4,
-            "type":        "regular",
-            "emails":      [{"subject": resend_subject, "from_name": from_name, "from": from_email}],
-            # Filter: subscribers who did NOT open the original campaign
-            "filter": [[
-                {
-                    "operator": "not_opened",
-                    "args":     ["campaign", campaign_id],
-                }
-            ]],
-        },
+        json=update_payload,
         timeout=30,
     )
     log(f"Update: {update_r.status_code} | {update_r.text[:200]}")
